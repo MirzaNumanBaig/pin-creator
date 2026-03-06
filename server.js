@@ -116,14 +116,14 @@ async function handleOAuthCallback(req, res) {
 app.get('/auth/callback', handleOAuthCallback);
 app.get('/callback', handleOAuthCallback);
 
-// GET /auth/logout  →  clear cookie and redirect home
+// GET /auth/logout  →  clear cookies, respond with 200 (no redirect — avoids Vercel edge stripping Set-Cookie on 302)
 app.get('/auth/logout', (req, res) => {
   setRuntimeToken('');
   res.setHeader('Set-Cookie', [
     'pinterest_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
     'pinterest_loggedout=1; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000',
   ]);
-  res.redirect('/');
+  res.json({ ok: true });
 });
 
 // ─── API Routes ───────────────────────────────────────────
