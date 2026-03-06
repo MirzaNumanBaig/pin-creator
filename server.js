@@ -24,8 +24,13 @@ app.use(express.json());
 // Read pinterest_token cookie and inject into runtime token store
 app.use((req, res, next) => {
   const raw = req.headers.cookie || '';
-  const match = raw.match(/(?:^|;\s*)pinterest_token=([^;]+)/);
-  if (match) setRuntimeToken(decodeURIComponent(match[1]));
+  const tokenMatch = raw.match(/(?:^|;\s*)pinterest_token=([^;]+)/);
+  const loggedOut = /(?:^|;\s*)pinterest_loggedout=1/.test(raw);
+  if (tokenMatch) {
+    setRuntimeToken(decodeURIComponent(tokenMatch[1]));
+  } else if (loggedOut) {
+    setRuntimeToken(''); // signal: user explicitly disconnected, skip env var fallback
+  }
   next();
 });
 
@@ -98,9 +103,10 @@ async function handleOAuthCallback(req, res) {
       `${req.protocol}://${req.get('host')}/auth/callback`;
     const tokens = await exchangeCode(code, redirectUri);
     // Store token in a long-lived cookie (1 year) — works on read-only filesystems
-    res.setHeader('Set-Cookie',
-      `pinterest_token=${encodeURIComponent(tokens.access_token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`
-    );
+    res.setHeader('Set-Cookie', [
+      `pinterest_token=${encodeURIComponent(tokens.access_token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`,
+      'pinterest_loggedout=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+    ]);
     res.redirect('/?connected=1');
   } catch (err) {
     res.redirect('/?auth_error=' + encodeURIComponent(err.message));
@@ -112,8 +118,11 @@ app.get('/callback', handleOAuthCallback);
 
 // GET /auth/logout  →  clear cookie and redirect home
 app.get('/auth/logout', (req, res) => {
-  setRuntimeToken(null);
-  res.setHeader('Set-Cookie', 'pinterest_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
+  setRuntimeToken('');
+  res.setHeader('Set-Cookie', [
+    'pinterest_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+    'pinterest_loggedout=1; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000',
+  ]);
   res.redirect('/');
 });
 

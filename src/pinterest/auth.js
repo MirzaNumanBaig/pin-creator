@@ -25,6 +25,7 @@ function setRuntimeToken(token) {
  * Load tokens from memory → tokens.json → .env fallback.
  */
 function loadTokens() {
+  if (_runtimeToken === '') return null; // explicitly logged out — skip env var fallback
   if (_runtimeToken) {
     return { access_token: _runtimeToken, refresh_token: null, expires_at: null };
   }
