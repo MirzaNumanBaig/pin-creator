@@ -78,8 +78,8 @@ app.get('/auth/login', (req, res) => {
   res.redirect(authUrl);
 });
 
-// GET /auth/callback  →  exchange code, save token, redirect to UI
-app.get('/auth/callback', async (req, res) => {
+// GET /auth/callback and /callback  →  exchange code, save token, redirect to UI
+async function handleOAuthCallback(req, res) {
   const { code, error } = req.query;
   if (error) return res.redirect('/?auth_error=' + encodeURIComponent(error));
   if (!code) return res.redirect('/?auth_error=missing_code');
@@ -92,7 +92,10 @@ app.get('/auth/callback', async (req, res) => {
   } catch (err) {
     res.redirect('/?auth_error=' + encodeURIComponent(err.message));
   }
-});
+}
+
+app.get('/auth/callback', handleOAuthCallback);
+app.get('/callback', handleOAuthCallback);
 
 // ─── API Routes ───────────────────────────────────────────
 
