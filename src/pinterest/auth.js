@@ -25,7 +25,11 @@ function setRuntimeToken(token) {
  * Load tokens from memory → tokens.json → .env fallback.
  */
 function loadTokens() {
-  if (_runtimeToken === '') return null; // explicitly logged out — skip env var fallback
+  if (_runtimeToken === '') return null; // explicitly logged out — skip all fallbacks
+  // Env var takes priority — it has full API access (vs Trial-tier OAuth tokens)
+  if (process.env.PINTEREST_ACCESS_TOKEN) {
+    return { access_token: process.env.PINTEREST_ACCESS_TOKEN, refresh_token: null, expires_at: null };
+  }
   if (_runtimeToken) {
     return { access_token: _runtimeToken, refresh_token: null, expires_at: null };
   }
@@ -33,9 +37,6 @@ function loadTokens() {
     try {
       return JSON.parse(fs.readFileSync(TOKENS_FILE, 'utf8'));
     } catch (_) { /* corrupt file */ }
-  }
-  if (process.env.PINTEREST_ACCESS_TOKEN) {
-    return { access_token: process.env.PINTEREST_ACCESS_TOKEN, refresh_token: null, expires_at: null };
   }
   return null;
 }
