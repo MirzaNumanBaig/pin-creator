@@ -57,6 +57,21 @@ function setAuthDisconnected() {
   document.getElementById('disconnect-btn').style.display = 'none';
 }
 
+// ── Disconnect ────────────────────────────────────────────
+document.getElementById('disconnect-btn').addEventListener('click', async () => {
+  try {
+    await fetch('/auth/logout');
+  } catch (_) { /* ignore network errors */ }
+  boardsCache = [];
+  setAuthDisconnected();
+  document.querySelectorAll('.row-board-select').forEach(sel => {
+    sel.innerHTML = '<option value="">Connect Pinterest first</option>';
+  });
+  const bb = document.getElementById('b-board');
+  if (bb) bb.innerHTML = '<option value="">Connect Pinterest first</option>';
+  toast('Disconnected from Pinterest');
+});
+
 // ── Boards ─────────────────────────────────────────────────
 let boardsCache = [];
 
