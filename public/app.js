@@ -22,6 +22,23 @@ document.getElementById('theme-toggle').addEventListener('click', () => {
   updateThemeBtn(next);
 });
 
+// ── Mobile sidebar toggle ─────────────────────────────────
+(function initMobileNav() {
+  const hamburger = document.getElementById('hamburger-btn');
+  const sidebar   = document.querySelector('.sidebar');
+  const overlay   = document.getElementById('sidebar-overlay');
+  if (!hamburger) return;
+  function openSidebar()  { sidebar.classList.add('open');    overlay.classList.add('show'); }
+  function closeSidebar() { sidebar.classList.remove('open'); overlay.classList.remove('show'); }
+  hamburger.addEventListener('click', () =>
+    sidebar.classList.contains('open') ? closeSidebar() : openSidebar()
+  );
+  overlay.addEventListener('click', closeSidebar);
+  document.querySelectorAll('.nav-btn').forEach(btn =>
+    btn.addEventListener('click', closeSidebar)
+  );
+})();
+
 // ── Tab routing ───────────────────────────────────────────
 document.querySelectorAll('.nav-btn').forEach(btn => {
   btn.addEventListener('click', () => {

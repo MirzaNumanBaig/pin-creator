@@ -682,6 +682,89 @@ input[type="datetime-local"] { color-scheme: dark; }
 .empty-state p { margin-bottom: 4px; font-size: 15px; }
 .empty-state .muted { font-size: 13px; }
 
+/* ── Mobile Top Bar ── */
+.mobile-topbar {
+  display: none;
+}
+
+/* ── Responsive: tablet & mobile (<= 900px) ── */
+@media (max-width: 900px) {
+  .mobile-topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 56px;
+    padding: 0 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    z-index: 150;
+  }
+
+  .hamburger {
+    background: none;
+    border: none;
+    color: var(--text);
+    cursor: pointer;
+    padding: 4px 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    flex-shrink: 0;
+  }
+  .hamburger span {
+    display: block;
+    width: 22px;
+    height: 2px;
+    background: currentColor;
+    border-radius: 2px;
+    transition: transform 0.2s, opacity 0.2s;
+  }
+
+  .sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 155;
+  }
+  .sidebar-overlay.show { display: block; }
+
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    z-index: 160;
+    top: 0;
+  }
+  .sidebar.open { transform: translateX(0); }
+
+  .main {
+    margin-left: 0;
+    padding: 76px 24px 40px;
+  }
+}
+
+/* ── Responsive: mobile only (<= 540px) ── */
+@media (max-width: 540px) {
+  .main {
+    padding: 68px 16px 32px;
+  }
+  .card {
+    padding: 20px 16px;
+  }
+  .page-header h1 { font-size: 22px; }
+  .page-header-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .btn-row { flex-wrap: wrap; }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .history-item, .scheduled-item { flex-wrap: wrap; }
+  .history-right, .scheduled-right { flex-direction: row; align-items: center; }
+  .toast { right: 12px; left: 12px; max-width: none; }
+}
+
 /* ── Misc ── */
 .muted { color: var(--text-muted); }
 code { background: var(--surface2); padding: 2px 6px; border-radius: 4px; font-size: 13px; }
