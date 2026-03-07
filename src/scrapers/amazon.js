@@ -149,28 +149,54 @@ function extractTitle($, jsonLd) {
 
 /**
  * Extract bullet-point description, falling back to product description paragraph.
+ * Amazon has multiple page layouts; we try all known selectors.
  */
 function extractDescription($, jsonLd) {
-  // Bullet points
-  const bullets = [];
-  $('#feature-bullets ul li span.a-list-item').each((_, el) => {
-    const text = $(el).text().trim();
-    if (text && !text.toLowerCase().includes('make sure this fits')) {
-      bullets.push(text);
-    }
-  });
-  if (bullets.length) return bullets.join(' ');
+  // All known bullet-point containers across Amazon's page layouts
+  const bulletSelectors = [
+    '#feature-bullets ul li span.a-list-item',
+    '#feature-bullets .a-list-item',
+    '#featurebullets_feature_div .a-list-item',
+    '[data-feature-name="featurebullets"] .a-list-item',
+    '#productFactsDesktop_feature_div .a-list-item',
+    '#productOverview_feature_div .a-list-item',
+    '#detailBullets_feature_div .a-list-item',
+  ];
+
+  for (const sel of bulletSelectors) {
+    const bullets = [];
+    $(sel).each((_, el) => {
+      const text = $(el).text().trim();
+      if (text
+        && !text.toLowerCase().includes('make sure this fits')
+        && !text.toLowerCase().startsWith('›')
+        && text.length > 10) {
+        bullets.push(text);
+      }
+    });
+    if (bullets.length) return bullets.slice(0, 6).join(' '); // cap at 6 bullets
+  }
 
   // Product description paragraph
-  const desc = $('#productDescription p').first().text().trim()
-    || $('#productDescription').first().text().trim();
-  if (desc) return desc;
+  const descSelectors = [
+    '#productDescription p',
+    '#productDescription_feature_div p',
+    '#productDescription',
+    '#aplus p',
+  ];
+  for (const sel of descSelectors) {
+    const text = $(sel).first().text().trim();
+    if (text && text.length > 20) return text;
+  }
 
-  // JSON-LD description
+  // og:description is often pre-populated with bullet text — use it early
+  const og = $('meta[property="og:description"]').attr('content');
+  if (og && og.length > 20) return og;
+
+  // JSON-LD description as last resort
   if (jsonLd?.description) return String(jsonLd.description).trim();
 
-  // og:description fallback
-  return $('meta[property="og:description"]').attr('content') || null;
+  return null;
 }
 
 /**
