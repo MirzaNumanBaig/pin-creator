@@ -34,7 +34,6 @@ body {
   font-size: 14px;
   line-height: 1.6;
   min-height: 100vh;
-  overflow-x: hidden;
 }
 
 /* ── Layout ── */
@@ -54,6 +53,8 @@ body {
 .main {
   margin-left: var(--sidebar-w);
   flex: 1;
+  min-width: 0; /* prevent flex child from growing wider than viewport */
+  overflow-x: hidden;
   padding: 40px 48px;
   max-width: 1100px;
 }
