@@ -316,7 +316,11 @@ async function scrapeAmazon(url, options = {}, _attempt = 1) {
     if (_attempt < MAX_ATTEMPTS) {
       return scrapeAmazon(url, options, _attempt + 1);
     }
-    throw new Error('Amazon is blocking automated access. Try again in a few minutes, or increase the delay between pins to 15-20 seconds.');
+    throw new Error(
+      useScraperApi
+        ? 'ScraperAPI could not retrieve this Amazon page. The product may be region-locked or temporarily unavailable — try again in a moment.'
+        : 'Amazon is blocking automated access. Try again in a few minutes, or add a ScraperAPI key in settings to bypass this permanently.'
+    );
   }
 
   const jsonLd = extractJsonLd($);
