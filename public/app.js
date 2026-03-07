@@ -792,13 +792,20 @@ document.getElementById('b-start-btn').addEventListener('click', async () => {
   const btn = document.getElementById('b-start-btn');
   btn.disabled = true; btn.textContent = 'Running…';
 
-  const progCard = document.getElementById('batch-progress');
-  const progBar  = document.getElementById('prog-bar');
-  const progLbl  = document.getElementById('prog-label');
-  const batchLog = document.getElementById('batch-log');
+  const progCard    = document.getElementById('batch-progress');
+  const progBar     = document.getElementById('prog-bar');
+  const progLbl     = document.getElementById('prog-label');
+  const progTotal   = document.getElementById('prog-total');
+  const progSuccess = document.getElementById('prog-success');
+  const progFailed  = document.getElementById('prog-failed');
+  const batchLog    = document.getElementById('batch-log');
   progCard.style.display = '';
   batchLog.innerHTML = '';
   progBar.style.width = '0%';
+  progTotal.textContent = '0';
+  progSuccess.textContent = '0';
+  progFailed.textContent = '0';
+  progLbl.textContent = '0/0';
 
   const form = new FormData();
   form.append('file', file, 'batch.csv');
@@ -826,23 +833,30 @@ document.getElementById('b-start-btn').addEventListener('click', async () => {
         try { ev = JSON.parse(line); } catch { continue; }
 
         if (ev.type === 'start') {
-          total = ev.total; progLbl.textContent = `0 / ${total}`;
+          total = ev.total;
+          progTotal.textContent = total;
+          progLbl.textContent = `0/${total}`;
         } else if (ev.type === 'progress') {
           progBar.style.width = Math.round((ev.index / total) * 100) + '%';
-          progLbl.textContent = `${ev.index} / ${total}`;
+          progLbl.textContent = `${ev.index}/${total}`;
           const row = document.createElement('div');
           row.className = 'log-row ' + (ev.status === 'ok' ? 'ok' : 'err');
+          // Show just the path portion of the URL for readability
+          let shortUrl = ev.url;
+          try { const u = new URL(ev.url); shortUrl = u.hostname + u.pathname.substring(0, 40); } catch (_) {}
           if (ev.status === 'ok') {
-            row.innerHTML = `<span class="log-dot"></span><div><div class="log-url">${ev.url}</div><a class="log-pin" href="${ev.pinUrl}" target="_blank">${ev.pinUrl}</a></div>`;
-            saveHistory({ url: ev.url, board, title: ev.url, imageUrl: '', pinUrl: ev.pinUrl, status: 'success' });
+            progSuccess.textContent = parseInt(progSuccess.textContent || 0) + 1;
+            row.innerHTML = `<span class="log-dot"></span><div><div class="log-title">${escHtml(ev.title || shortUrl)}</div><div class="log-url">${escHtml(shortUrl)}</div><a class="log-pin" href="${ev.pinUrl}" target="_blank">View pin →</a></div>`;
+            saveHistory({ url: ev.url, board, title: ev.title || ev.url, imageUrl: '', pinUrl: ev.pinUrl, status: 'success' });
           } else {
-            row.innerHTML = `<span class="log-dot"></span><div><div class="log-url">${ev.url}</div><div class="log-err">${ev.error}</div></div>`;
+            progFailed.textContent = parseInt(progFailed.textContent || 0) + 1;
+            row.innerHTML = `<span class="log-dot"></span><div><div class="log-url">${escHtml(shortUrl)}</div><div class="log-err">${escHtml(ev.error)}</div></div>`;
             saveHistory({ url: ev.url, board, title: ev.url, imageUrl: '', pinUrl: '', status: 'failed', error: ev.error });
           }
           batchLog.appendChild(row);
           batchLog.scrollTop = batchLog.scrollHeight;
         } else if (ev.type === 'done') {
-          toast(`Done: ${ev.success} posted, ${ev.failed} failed`);
+          toast(`Done: ${ev.success} posted, ${ev.failed} failed`, ev.failed > 0 ? 'warn' : 'ok');
         }
       }
     }

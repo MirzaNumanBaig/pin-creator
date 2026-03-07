@@ -49,16 +49,27 @@ const _scrapeCache = new Map();
 const SCRAPE_CACHE_TTL = 10 * 60 * 1000;
 
 async function scrapeUrl(url) {
-  const cached = _scrapeCache.get(url);
-  if (cached && Date.now() - cached.ts < SCRAPE_CACHE_TTL) {
-    return { ...cached.data };
-  }
+  const asin = extractAsin(url);
   const isAmazon = /amazon\.(com|co\.uk|de|fr|ca|com\.au|in|co\.jp)/i.test(url)
     || /amzn\.to\//i.test(url)
     || /amzn\.eu\//i.test(url)
-    || extractAsin(url);
-  const data = await (isAmazon ? scrapeAmazon(url) : scrapeGeneric(url));
-  _scrapeCache.set(url, { data, ts: Date.now() });
+    || !!asin;
+
+  // Normalize long Amazon affiliate URLs → clean /dp/ASIN URL before fetching.
+  // Long tracking params (dib, crid, ref_, linkCode, etc.) trigger bot detection
+  // and cause Amazon to return a CAPTCHA or region-error page instead of product data.
+  const fetchUrl = (isAmazon && asin) ? `https://www.amazon.com/dp/${asin}` : url;
+
+  // Check cache by normalized URL first, then original
+  const cached = _scrapeCache.get(fetchUrl) || _scrapeCache.get(url);
+  if (cached && Date.now() - cached.ts < SCRAPE_CACHE_TTL) {
+    return { ...cached.data };
+  }
+
+  const data = await (isAmazon ? scrapeAmazon(fetchUrl) : scrapeGeneric(url));
+  // Cache by both normalized and original URL so preview→post hits cache regardless
+  _scrapeCache.set(fetchUrl, { data, ts: Date.now() });
+  if (fetchUrl !== url) _scrapeCache.set(url, { data, ts: Date.now() });
   return data;
 }
 
@@ -296,7 +307,7 @@ app.post('/api/batch', upload.single('file'), async (req, res) => {
       const result = await createPinWithRetry(pin);
 
       logSuccess({ url: row.product_url, affiliateUrl, pinId: result.id, pinUrl: result.url });
-      send({ type: 'progress', index: i + 1, total: rows.length, status: 'ok', url: row.product_url, pinUrl: result.url });
+      send({ type: 'progress', index: i + 1, total: rows.length, status: 'ok', url: row.product_url, title: productData.title || '', pinUrl: result.url });
       success++;
     } catch (err) {
       logFailure({ url: row.product_url, affiliateUrl: row.affiliate_url || row.product_url, error: err.message });
