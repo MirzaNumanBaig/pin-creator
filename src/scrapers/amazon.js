@@ -211,60 +211,76 @@ function jitter(ms) {
   return ms + Math.floor(Math.random() * ms * 0.5);
 }
 
+/**
+ * Build fetch URL: use ScraperAPI when key is configured, otherwise direct.
+ * ScraperAPI routes through residential IPs and handles CAPTCHA automatically.
+ */
+function buildFetchUrl(targetUrl) {
+  const key = process.env.SCRAPERAPI_KEY;
+  if (!key) return targetUrl;
+  return `http://api.scraperapi.com?api_key=${key}&url=${encodeURIComponent(targetUrl)}&country_code=us&device_type=desktop`;
+}
+
 async function scrapeAmazon(url, options = {}, _attempt = 1) {
-  const MAX_ATTEMPTS = 6;
+  const useScraperApi = !!process.env.SCRAPERAPI_KEY;
+  const MAX_ATTEMPTS = useScraperApi ? 3 : 6; // ScraperAPI rarely needs many retries
   const asin = extractAsin(url);
 
-  // Only delay on retries — never delay the first attempt (kills preview speed).
-  // Use a flat 1500ms base with jitter so retries space out without stacking up.
+  // Only delay on retries. ScraperAPI handles rate limiting on their end.
   if (_attempt > 1) {
-    await new Promise(r => setTimeout(r, jitter(1500)));
+    await new Promise(r => setTimeout(r, jitter(useScraperApi ? 800 : 1500)));
   }
 
-  // On later attempts, switch to mobile UA + mobile Amazon URL as fallback
-  const useMobile = _attempt >= 4;
-  const ua = useMobile ? randomMobileUA() : randomUserAgent();
-  const ref = randomReferrer();
-  const chromeVer = ua.includes('Chrome/131') ? '131' : ua.includes('Chrome/130') ? '130' : '131';
+  let axiosConfig;
 
-  const headers = {
-    'User-Agent': ua,
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'Cache-Control': 'max-age=0',
-    'DNT': '1',
-    'Upgrade-Insecure-Requests': '1',
-    'Sec-Fetch-Dest': 'document',
-    'Sec-Fetch-Mode': 'navigate',
-    'Sec-Fetch-Site': ref ? 'cross-site' : 'none',
-    'Sec-Fetch-User': '?1',
-    'Cookie': fakeSessionCookies(),
-  };
+  if (useScraperApi) {
+    // ScraperAPI manages headers and IPs — keep our request minimal
+    axiosConfig = {
+      headers: { 'User-Agent': randomUserAgent() },
+      timeout: 30000, // ScraperAPI can take up to 25s on hard pages
+      maxRedirects: 5,
+    };
+  } else {
+    // Direct fetch — rotate UA, cookies, referrer to avoid detection
+    const useMobile = _attempt >= 4;
+    const ua  = useMobile ? randomMobileUA() : randomUserAgent();
+    const ref = randomReferrer();
+    const chromeVer = ua.includes('Chrome/131') ? '131' : ua.includes('Chrome/130') ? '130' : '131';
 
-  // Add Chrome client-hints only for Chrome UAs
-  if (ua.includes('Chrome/')) {
-    headers['sec-ch-ua'] = `"Chromium";v="${chromeVer}", "Google Chrome";v="${chromeVer}", "Not?A_Brand";v="99"`;
-    headers['sec-ch-ua-mobile'] = useMobile ? '?1' : '?0';
-    headers['sec-ch-ua-platform'] = useMobile ? '"Android"' : '"Windows"';
+    const headers = {
+      'User-Agent': ua,
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Cache-Control': 'max-age=0',
+      'DNT': '1',
+      'Upgrade-Insecure-Requests': '1',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': ref ? 'cross-site' : 'none',
+      'Sec-Fetch-User': '?1',
+      'Cookie': fakeSessionCookies(),
+    };
+    if (ua.includes('Chrome/')) {
+      headers['sec-ch-ua'] = `"Chromium";v="${chromeVer}", "Google Chrome";v="${chromeVer}", "Not?A_Brand";v="99"`;
+      headers['sec-ch-ua-mobile'] = useMobile ? '?1' : '?0';
+      headers['sec-ch-ua-platform'] = useMobile ? '"Android"' : '"Windows"';
+    }
+    if (ref) headers['Referer'] = ref;
+
+    axiosConfig = { headers, timeout: 12000, maxRedirects: 8 };
+
+    if (options.proxy) {
+      const { HttpsProxyAgent } = require('https-proxy-agent');
+      axiosConfig.httpsAgent = new HttpsProxyAgent(options.proxy);
+    }
   }
 
-  if (ref) headers['Referer'] = ref;
-
-  const axiosConfig = {
-    headers,
-    timeout: 12000,
-    maxRedirects: 8,
-  };
-
-  if (options.proxy) {
-    const { HttpsProxyAgent } = require('https-proxy-agent');
-    axiosConfig.httpsAgent = new HttpsProxyAgent(options.proxy);
-  }
+  const fetchUrl = buildFetchUrl(url);
 
   let response;
   try {
-    response = await axios.get(url, axiosConfig);
+    response = await axios.get(fetchUrl, axiosConfig);
   } catch (err) {
     // Retry on network errors / 5xx
     const retryable = err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT'
