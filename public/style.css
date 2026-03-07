@@ -206,6 +206,96 @@ nav { display: flex; flex-direction: column; gap: 4px; }
 }
 .theme-fab:hover { background: var(--surface2); color: var(--text); }
 
+/* ── Notification bell FAB ── */
+.notif-fab {
+  position: fixed;
+  top: 14px;
+  right: 60px;
+  z-index: 151;
+  width: 36px;
+  height: 36px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.notif-fab:hover { background: var(--surface2); color: var(--text); }
+.notif-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  border-radius: 10px;
+  padding: 0 4px;
+}
+
+/* ── Notification Panel ── */
+.notif-panel {
+  position: fixed;
+  top: 58px;
+  right: 16px;
+  z-index: 200;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  max-height: 480px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 48px rgba(0,0,0,.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.notif-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.notif-panel-header h3 { font-size: 15px; font-weight: 600; }
+.notif-panel-body {
+  overflow-y: auto;
+  flex: 1;
+  max-height: 400px;
+}
+.notif-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.notif-item:last-child { border-bottom: none; }
+.notif-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+.notif-dot.pending { background: var(--warn); }
+.notif-dot.firing  { background: var(--accent); animation: pulse 1s infinite; }
+.notif-dot.done    { background: var(--success); }
+.notif-dot.failed  { background: var(--error); }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.notif-info { flex: 1; min-width: 0; }
+.notif-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.notif-meta { color: var(--text-muted); font-size: 11px; margin-top: 2px; }
+.notif-cancel { flex-shrink: 0; }
+
 /* ── Row header buttons (clone + remove) ── */
 .row-header-btns { display: flex; align-items: center; gap: 6px; }
 

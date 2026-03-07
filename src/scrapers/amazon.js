@@ -3,16 +3,48 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 
-// Rotate through common desktop User-Agents to reduce bot detection
+// Rotate through recent desktop User-Agents (2025-era) to reduce bot detection
 const USER_AGENTS = [
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_2) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+];
+
+// Mobile User-Agents for fallback when desktop is blocked
+const MOBILE_USER_AGENTS = [
+  'Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36',
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Mobile/15E148 Safari/604.1',
+];
+
+// Referrers that mimic organic traffic from search engines
+const REFERRERS = [
+  'https://www.google.com/',
+  'https://www.google.com/search?q=amazon',
+  'https://www.bing.com/',
+  'https://www.bing.com/search?q=amazon+product',
+  '',  // sometimes no referrer is fine
 ];
 
 function randomUserAgent() {
   return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+}
+
+function randomMobileUA() {
+  return MOBILE_USER_AGENTS[Math.floor(Math.random() * MOBILE_USER_AGENTS.length)];
+}
+
+function randomReferrer() {
+  return REFERRERS[Math.floor(Math.random() * REFERRERS.length)];
+}
+
+// Generate a plausible session-id cookie to mimic a returning visitor
+function fakeSessionCookies() {
+  const sid = Array.from({ length: 17 }, () => Math.floor(Math.random() * 10)).join('');
+  return `session-id=${sid}; i18n-prefs=USD; sp-cdn="L5Z9:PK"; skin=noskin`;
 }
 
 /**
@@ -153,33 +185,46 @@ function jitter(ms) {
 }
 
 async function scrapeAmazon(url, options = {}, _attempt = 1) {
-  const MAX_ATTEMPTS = 5;
+  const MAX_ATTEMPTS = 6;
   const asin = extractAsin(url);
 
-  // Add a small random pre-request jitter on retries and batch calls to avoid
-  // synchronized requests that trigger Amazon's rate-limiter
-  if (_attempt > 1) {
-    await new Promise(r => setTimeout(r, jitter(1800 * _attempt)));
+  // Add random pre-request jitter to avoid synchronized requests that trigger
+  // Amazon's rate-limiter. Even first attempt gets a small jitter for batch calls.
+  const baseDelay = _attempt === 1 ? 300 : 2000 * _attempt;
+  await new Promise(r => setTimeout(r, jitter(baseDelay)));
+
+  // On later attempts, switch to mobile UA + mobile Amazon URL as fallback
+  const useMobile = _attempt >= 4;
+  const ua = useMobile ? randomMobileUA() : randomUserAgent();
+  const ref = randomReferrer();
+  const chromeVer = ua.includes('Chrome/131') ? '131' : ua.includes('Chrome/130') ? '130' : '131';
+
+  const headers = {
+    'User-Agent': ua,
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Cache-Control': 'max-age=0',
+    'DNT': '1',
+    'Upgrade-Insecure-Requests': '1',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': ref ? 'cross-site' : 'none',
+    'Sec-Fetch-User': '?1',
+    'Cookie': fakeSessionCookies(),
+  };
+
+  // Add Chrome client-hints only for Chrome UAs
+  if (ua.includes('Chrome/')) {
+    headers['sec-ch-ua'] = `"Chromium";v="${chromeVer}", "Google Chrome";v="${chromeVer}", "Not?A_Brand";v="99"`;
+    headers['sec-ch-ua-mobile'] = useMobile ? '?1' : '?0';
+    headers['sec-ch-ua-platform'] = useMobile ? '"Android"' : '"Windows"';
   }
 
+  if (ref) headers['Referer'] = ref;
+
   const axiosConfig = {
-    headers: {
-      'User-Agent': randomUserAgent(),
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-      'Accept-Encoding': 'gzip, deflate, br',
-      'Cache-Control': 'no-cache',
-      'Pragma': 'no-cache',
-      'DNT': '1',
-      'Upgrade-Insecure-Requests': '1',
-      'Sec-Fetch-Dest': 'document',
-      'Sec-Fetch-Mode': 'navigate',
-      'Sec-Fetch-Site': 'none',
-      'Sec-Fetch-User': '?1',
-      'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124"',
-      'sec-ch-ua-mobile': '?0',
-      'sec-ch-ua-platform': '"Windows"',
-    },
+    headers,
     timeout: 25000,
     maxRedirects: 10,
   };
@@ -227,7 +272,7 @@ async function scrapeAmazon(url, options = {}, _attempt = 1) {
     if (_attempt < MAX_ATTEMPTS) {
       return scrapeAmazon(url, options, _attempt + 1);
     }
-    throw new Error('Amazon is blocking automated access. Try again in a few minutes, or reduce batch delay to space out requests.');
+    throw new Error('Amazon is blocking automated access. Try again in a few minutes, or increase the delay between pins to 15-20 seconds.');
   }
 
   const jsonLd = extractJsonLd($);

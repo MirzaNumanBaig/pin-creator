@@ -18,10 +18,27 @@
     </div>
   </div>
 
+  <!-- Notification bell (fixed, icon-only) -->
+  <button class="notif-fab" id="notif-toggle" aria-label="Notifications" onclick="toggleNotifPanel()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+    <span class="notif-badge" id="notif-badge" style="display:none">0</span>
+  </button>
+
   <!-- Theme toggle (fixed, icon-only) -->
   <button class="theme-fab" id="theme-toggle" aria-label="Toggle theme">
     <span id="theme-icon">☀</span>
   </button>
+
+  <!-- Notification Panel -->
+  <div class="notif-panel" id="notif-panel" style="display:none">
+    <div class="notif-panel-header">
+      <h3>Scheduled</h3>
+      <button class="modal-close" onclick="toggleNotifPanel()">✕</button>
+    </div>
+    <div class="notif-panel-body" id="notif-panel-body">
+      <p class="muted" style="padding:20px;text-align:center">No scheduled items</p>
+    </div>
+  </div>
 
   <div class="app">
 
@@ -140,14 +157,41 @@ https://www.amazon.com/dp/B2XXXXXXXX?tag=your-tag"></textarea>
           </div>
           <div class="form-group">
             <label>Delay between pins <span class="hint">(seconds)</span></label>
-            <input type="number" id="b-delay" value="12" min="5" max="120" />
+            <input type="number" id="b-delay" value="15" min="8" max="120" />
           </div>
           <div class="toggle-row">
             <label class="toggle">
-              <input type="checkbox" id="b-ai" />
+              <input type="checkbox" id="b-ai" onchange="toggleBatchAi()" />
               <span class="slider"></span>
             </label>
             <span>AI Polish each pin <span class="hint">(GPT-4o-mini)</span></span>
+          </div>
+          <div class="ai-subopts" id="b-ai-opts" style="display:none">
+            <label class="ai-subopt-label">
+              <input type="checkbox" id="b-ai-title" checked /> Improve Title
+            </label>
+            <label class="ai-subopt-label">
+              <input type="checkbox" id="b-ai-desc" checked /> Improve Description
+            </label>
+          </div>
+          <div class="toggle-row">
+            <label class="toggle">
+              <input type="checkbox" id="b-sched-chk" onchange="toggleBatchSchedule()" />
+              <span class="slider"></span>
+            </label>
+            <span>Schedule for later</span>
+          </div>
+          <div class="schedule-panel" id="b-sched-panel" style="display:none">
+            <div class="schedule-grid">
+              <div class="form-group">
+                <label>Timezone</label>
+                <select id="b-tz"></select>
+              </div>
+              <div class="form-group">
+                <label>Date &amp; Time</label>
+                <input type="datetime-local" id="b-datetime" />
+              </div>
+            </div>
           </div>
           <button class="btn btn--primary" id="b-start-btn">Start Batch</button>
         </div>

@@ -264,9 +264,11 @@ app.post('/api/post', async (req, res) => {
 app.post('/api/batch', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'CSV file is required' });
 
-  const { board = '', ai = false, delay = 12000 } = req.body;
+  const { board = '', ai = false, aiTitle = 'true', aiDesc = 'true', delay = 15000 } = req.body;
   const pinDelay = parseInt(delay, 10);
   const useAi = ai === 'true' || ai === true;
+  const useAiTitle = aiTitle === 'true' || aiTitle === true;
+  const useAiDesc  = aiDesc === 'true' || aiDesc === true;
 
   const csvText = fs.readFileSync(req.file.path, 'utf8');
   fs.unlinkSync(req.file.path);
@@ -294,11 +296,11 @@ app.post('/api/batch', upload.single('file'), async (req, res) => {
       const productData = await scrapeUrl(row.product_url);
       let tags = [];
 
-      if (useAi) {
+      if (useAi && (useAiTitle || useAiDesc)) {
         try {
           const polished = await polishPin(productData, tags);
-          productData.title = polished.title;
-          productData.description = polished.description;
+          if (useAiTitle) productData.title = polished.title;
+          if (useAiDesc)  productData.description = polished.description;
         } catch (e) { /* use original */ }
       }
 

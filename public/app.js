@@ -530,7 +530,8 @@ function loadScheduled() {
   scheduledPins.forEach(item => {
     if (item.status !== 'pending') return;
     const delay = new Date(item.fireAt).getTime() - Date.now();
-    item._timerId = setTimeout(() => fireScheduled(item.id), Math.max(delay, 500));
+    const handler = item.type === 'batch' ? fireBatchScheduled : fireScheduled;
+    item._timerId = setTimeout(() => handler(item.id), Math.max(delay, 500));
   });
   updateScheduledBadge();
 }
@@ -612,6 +613,10 @@ function updateScheduledBadge() {
   const badge = document.getElementById('scheduled-count');
   badge.textContent = n;
   badge.style.display = n ? '' : 'none';
+  // Also update notification bell badge
+  const notifBadge = document.getElementById('notif-badge');
+  notifBadge.textContent = n;
+  notifBadge.style.display = n ? '' : 'none';
 }
 
 function renderScheduled() {
@@ -625,17 +630,23 @@ function renderScheduled() {
     const d = new Date(item.fireAt);
     const statusMap = { pending: 'badge--yellow', firing: 'badge--yellow', done: 'badge--green', failed: 'badge--red' };
     const labelMap  = { pending: 'Pending', firing: 'Posting…', done: 'Posted', failed: 'Failed' };
+    const isBatch = item.type === 'batch';
+    const displayTitle = isBatch ? item.title : (item.title || item.url);
+    const typeLabel = isBatch ? '<span class="badge badge--gray" style="font-size:10px;padding:2px 6px;margin-left:6px">BATCH</span>' : '';
     return `
 <div class="scheduled-item ${item.status}">
-  ${item.imageUrl
+  ${!isBatch && item.imageUrl
     ? `<img class="scheduled-thumb" src="${item.imageUrl}" alt="" onerror="this.style.display='none'" />`
-    : '<div class="scheduled-thumb-placeholder"></div>'}
+    : isBatch
+      ? '<div class="scheduled-thumb-placeholder" style="display:flex;align-items:center;justify-content:center;font-size:20px">📦</div>'
+      : '<div class="scheduled-thumb-placeholder"></div>'}
   <div class="scheduled-body">
-    <div class="scheduled-title">${escHtml(item.title || item.url)}</div>
-    <div class="scheduled-meta">Board: ${escHtml(item.boardName)} &nbsp;·&nbsp; ${escHtml(item.tz)}</div>
+    <div class="scheduled-title">${escHtml(displayTitle)}${typeLabel}</div>
+    <div class="scheduled-meta">Board: ${escHtml(item.boardName)} &nbsp;·&nbsp; ${escHtml(item.tz)}${isBatch ? ` &nbsp;·&nbsp; Delay: ${item.delay || 15}s` : ''}</div>
     <div class="scheduled-time">${d.toLocaleString()}${item.status === 'pending' ? `&nbsp;<span class="countdown" data-fire="${item.fireAt}"></span>` : ''}</div>
     ${item.status === 'failed' ? `<div class="scheduled-error">${escHtml(item.error || '')}</div>` : ''}
-    ${item.status === 'done' ? `<a class="pin-link" href="${item.pinUrl}" target="_blank">View pin →</a>` : ''}
+    ${item.status === 'done' && !isBatch ? `<a class="pin-link" href="${item.pinUrl}" target="_blank">View pin →</a>` : ''}
+    ${item.status === 'done' && isBatch ? `<div class="muted" style="font-size:12px;margin-top:2px">${escHtml(item.result || '')}</div>` : ''}
   </div>
   <div class="scheduled-right">
     <span class="badge ${statusMap[item.status]}">${labelMap[item.status]}</span>
@@ -657,6 +668,131 @@ function updateCountdowns() {
   });
 }
 setInterval(updateCountdowns, 1000);
+
+// ── Batch Scheduled Fire ─────────────────────────────────
+async function fireBatchScheduled(scheduledId) {
+  const item = scheduledPins.find(p => p.id === scheduledId);
+  if (!item || item.status !== 'pending') return;
+  item.status = 'firing';
+  saveScheduledStorage();
+  updateScheduledBadge();
+  updateNotifPanel();
+  renderScheduled();
+
+  // Build CSV file from stored data
+  let csvBlob;
+  if (item.urls) {
+    const csv = 'product_url\n' + item.urls.join('\n');
+    csvBlob = new Blob([csv], { type: 'text/csv' });
+  } else if (item.csvText) {
+    csvBlob = new Blob([item.csvText], { type: 'text/csv' });
+  }
+
+  if (!csvBlob) {
+    item.status = 'failed';
+    item.error = 'No URLs found for this batch';
+    saveScheduledStorage();
+    updateScheduledBadge();
+    updateNotifPanel();
+    renderScheduled();
+    toast('Scheduled batch failed: no URLs', 'err');
+    return;
+  }
+
+  const form = new FormData();
+  form.append('file', csvBlob, 'batch.csv');
+  form.append('board', item.board);
+  form.append('delay', (item.delay || 15) * 1000);
+  form.append('ai', item.ai || false);
+  form.append('aiTitle', item.aiTitle ?? true);
+  form.append('aiDesc', item.aiDesc ?? true);
+
+  let success = 0, failed = 0;
+  try {
+    const res     = await fetch('/api/batch', { method: 'POST', body: form });
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split('\n\n');
+      buffer = parts.pop();
+      for (const part of parts) {
+        const line = part.replace(/^data: /, '').trim();
+        if (!line) continue;
+        let ev;
+        try { ev = JSON.parse(line); } catch { continue; }
+        if (ev.type === 'progress') {
+          if (ev.status === 'ok') {
+            success++;
+            saveHistory({ url: ev.url, board: item.boardName, title: ev.title || ev.url, imageUrl: '', pinUrl: ev.pinUrl, status: 'success' });
+          } else {
+            failed++;
+            saveHistory({ url: ev.url, board: item.boardName, title: ev.url, imageUrl: '', pinUrl: '', status: 'failed', error: ev.error });
+          }
+        }
+      }
+    }
+
+    item.status = 'done';
+    item.result = `${success} posted, ${failed} failed`;
+    toast(`Scheduled batch done: ${success} posted, ${failed} failed`, failed > 0 ? 'warn' : 'ok');
+  } catch (err) {
+    item.status = 'failed';
+    item.error = err.message;
+    toast(`Scheduled batch failed: ${err.message}`, 'err');
+  }
+  saveScheduledStorage();
+  updateScheduledBadge();
+  updateNotifPanel();
+  renderScheduled();
+}
+
+// ── Notification Panel ───────────────────────────────────
+function toggleNotifPanel() {
+  const panel = document.getElementById('notif-panel');
+  const isOpen = panel.style.display !== 'none';
+  panel.style.display = isOpen ? 'none' : 'flex';
+  if (!isOpen) updateNotifPanel();
+}
+
+// Close notif panel when clicking outside
+document.addEventListener('click', (e) => {
+  const panel = document.getElementById('notif-panel');
+  const bell  = document.getElementById('notif-toggle');
+  if (panel.style.display !== 'none' && !panel.contains(e.target) && !bell.contains(e.target)) {
+    panel.style.display = 'none';
+  }
+});
+
+function updateNotifPanel() {
+  const body = document.getElementById('notif-panel-body');
+  if (!body) return;
+  const items = scheduledPins.filter(p => p.status === 'pending' || p.status === 'firing');
+  if (!items.length) {
+    body.innerHTML = '<p class="muted" style="padding:20px;text-align:center">No scheduled items</p>';
+    return;
+  }
+  body.innerHTML = items.map(item => {
+    const d = new Date(item.fireAt);
+    const isBatch = item.type === 'batch';
+    const label = isBatch ? item.title : (item.title || item.url);
+    const statusDot = item.status === 'firing' ? 'firing' : 'pending';
+    const timeStr = item.status === 'firing' ? 'Posting now...' : d.toLocaleString();
+    return `
+<div class="notif-item">
+  <span class="notif-dot ${statusDot}"></span>
+  <div class="notif-info">
+    <div class="notif-title">${escHtml(label)}</div>
+    <div class="notif-meta">${escHtml(item.boardName || '')} &middot; ${timeStr}</div>
+  </div>
+  ${item.status === 'pending' ? `<button class="btn--xs notif-cancel" onclick="cancelScheduled('${item.id}')">Cancel</button>` : ''}
+</div>`;
+  }).join('');
+}
 
 // ── History ───────────────────────────────────────────────
 let history = [];
@@ -733,6 +869,32 @@ function escHtml(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// ── Batch: AI & Schedule toggles ──────────────────────────
+function toggleBatchAi() {
+  const on = document.getElementById('b-ai').checked;
+  document.getElementById('b-ai-opts').style.display = on ? '' : 'none';
+}
+
+function toggleBatchSchedule() {
+  const chk   = document.getElementById('b-sched-chk');
+  const panel = document.getElementById('b-sched-panel');
+  const btn   = document.getElementById('b-start-btn');
+  if (chk.checked) {
+    panel.style.display = '';
+    btn.textContent = 'Schedule Batch';
+    const dt = new Date(Date.now() + 3600000);
+    dt.setSeconds(0, 0);
+    const pad = n => String(n).padStart(2, '0');
+    const local = `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+    const dtInput = document.getElementById('b-datetime');
+    if (!dtInput.value) dtInput.value = local;
+    dtInput.min = local;
+  } else {
+    panel.style.display = 'none';
+    btn.textContent = 'Start Batch';
+  }
+}
+
 // ── Batch: mode switcher ──────────────────────────────────
 function setBatchMode(mode) {
   const isUrls = mode === 'urls';
@@ -793,13 +955,17 @@ dropZone.addEventListener('drop', e => {
 // ── Batch: Start ──────────────────────────────────────────
 document.getElementById('b-start-btn').addEventListener('click', async () => {
   const isUrlMode = document.getElementById('bmode-urls').classList.contains('active');
-  const board = document.getElementById('b-board').value;
-  const delay = document.getElementById('b-delay').value;
-  const ai    = document.getElementById('b-ai').checked;
+  const board   = document.getElementById('b-board').value;
+  const delay   = document.getElementById('b-delay').value;
+  const ai      = document.getElementById('b-ai').checked;
+  const aiTitle = ai ? (document.getElementById('b-ai-title')?.checked ?? true) : false;
+  const aiDesc  = ai ? (document.getElementById('b-ai-desc')?.checked ?? true) : false;
+  const schedule = document.getElementById('b-sched-chk').checked;
 
+  let urls = [];
   let file;
   if (isUrlMode) {
-    const urls = getUrlsFromTextarea();
+    urls = getUrlsFromTextarea();
     if (!urls.length) { toast('Paste at least one URL', 'err'); return; }
     const csv = 'product_url\n' + urls.join('\n');
     file = new Blob([csv], { type: 'text/csv' });
@@ -808,6 +974,48 @@ document.getElementById('b-start-btn').addEventListener('click', async () => {
     if (!file) { toast('Select a CSV file first', 'err'); return; }
   }
 
+  if (!board) { toast('Select a board first', 'err'); return; }
+
+  // ── Schedule batch for later ──
+  if (schedule) {
+    const tz    = document.getElementById('b-tz').value;
+    const dtVal = document.getElementById('b-datetime').value;
+    if (!dtVal) { toast('Select a date and time', 'err'); return; }
+    const fireAt = parseDateInTimezone(dtVal, tz);
+    if (fireAt <= new Date()) { toast('Scheduled time must be in the future', 'err'); return; }
+
+    const boardName = boardsCache.find(b => b.id === board)?.name || board;
+    const urlCount = isUrlMode ? urls.length : '?';
+    const item = {
+      id: `bsch-${Date.now()}`,
+      type: 'batch',
+      urls: isUrlMode ? urls : null,
+      csvText: null,
+      board, boardName, ai, aiTitle, aiDesc, tz,
+      delay: parseInt(delay, 10),
+      fireAt: fireAt.toISOString(),
+      title: `Batch: ${urlCount} URLs → ${boardName}`,
+      status: 'pending',
+    };
+
+    // If CSV file, read its text so we can store it
+    if (!isUrlMode) {
+      item.csvText = await file.text();
+      const lines = item.csvText.split('\n').filter(l => l.trim());
+      item.title = `Batch: ${Math.max(0, lines.length - 1)} URLs → ${boardName}`;
+    }
+
+    item._timerId = setTimeout(() => fireBatchScheduled(item.id), fireAt.getTime() - Date.now());
+    scheduledPins.push(item);
+    saveScheduledStorage();
+    updateScheduledBadge();
+    updateNotifPanel();
+    renderScheduled();
+    toast(`Batch scheduled for ${fireAt.toLocaleString()}!`);
+    return;
+  }
+
+  // ── Run batch immediately ──
   const btn = document.getElementById('b-start-btn');
   btn.disabled = true; btn.textContent = 'Running…';
 
@@ -832,6 +1040,8 @@ document.getElementById('b-start-btn').addEventListener('click', async () => {
   form.append('board', board);
   form.append('delay', delay * 1000);
   form.append('ai', ai);
+  form.append('aiTitle', aiTitle);
+  form.append('aiDesc', aiDesc);
 
   try {
     const res     = await fetch('/api/batch', { method: 'POST', body: form });
@@ -894,3 +1104,7 @@ loadHistory();
 loadScheduled();
 loadBoards();
 addRow(); // Start with one empty row
+// Populate batch timezone select
+const bTzSel = document.getElementById('b-tz');
+if (bTzSel) bTzSel.innerHTML = timezoneOptionsHtml();
+updateNotifPanel();
