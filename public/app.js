@@ -756,6 +756,25 @@ document.getElementById('b-urls').addEventListener('input', () => {
     : '';
 });
 
+// ── Batch: log filter ────────────────────────────────────
+let _batchFilter = 'all';
+function filterBatchLog(filter) {
+  _batchFilter = filter;
+  // Update active cell styling
+  ['all', 'ok', 'err'].forEach(f => {
+    const cell = document.getElementById('bstat-' + f);
+    if (cell) cell.classList.toggle('batch-stat--active', f === filter);
+  });
+  // Show/hide log rows
+  document.querySelectorAll('#batch-log .log-row').forEach(row => {
+    if (filter === 'all') {
+      row.style.display = '';
+    } else {
+      row.style.display = row.classList.contains(filter) ? '' : 'none';
+    }
+  });
+}
+
 // ── Batch: file label ─────────────────────────────────────
 document.getElementById('b-file').addEventListener('change', e => {
   const f = e.target.files[0];
@@ -805,6 +824,7 @@ document.getElementById('b-start-btn').addEventListener('click', async () => {
   progTotal.textContent = '0';
   progSuccess.textContent = '0';
   progFailed.textContent = '0';
+  filterBatchLog('all');
   progLbl.textContent = '0/0';
 
   const form = new FormData();
@@ -853,6 +873,8 @@ document.getElementById('b-start-btn').addEventListener('click', async () => {
             row.innerHTML = `<span class="log-dot"></span><div><div class="log-url">${escHtml(shortUrl)}</div><div class="log-err">${escHtml(ev.error)}</div></div>`;
             saveHistory({ url: ev.url, board, title: ev.url, imageUrl: '', pinUrl: '', status: 'failed', error: ev.error });
           }
+          // Apply current filter to newly added row
+          if (_batchFilter !== 'all' && !row.classList.contains(_batchFilter)) row.style.display = 'none';
           batchLog.appendChild(row);
           batchLog.scrollTop = batchLog.scrollHeight;
         } else if (ev.type === 'done') {

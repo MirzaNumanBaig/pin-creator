@@ -148,9 +148,19 @@ function extractDescription($, jsonLd) {
  * @param {number} [_attempt=1] - Internal retry counter
  * @returns {Promise<{asin, title, description, imageUrl, price, sourceUrl}>}
  */
+function jitter(ms) {
+  return ms + Math.floor(Math.random() * ms * 0.5);
+}
+
 async function scrapeAmazon(url, options = {}, _attempt = 1) {
-  const MAX_ATTEMPTS = 3;
+  const MAX_ATTEMPTS = 5;
   const asin = extractAsin(url);
+
+  // Add a small random pre-request jitter on retries and batch calls to avoid
+  // synchronized requests that trigger Amazon's rate-limiter
+  if (_attempt > 1) {
+    await new Promise(r => setTimeout(r, jitter(1800 * _attempt)));
+  }
 
   const axiosConfig = {
     headers: {
@@ -160,12 +170,17 @@ async function scrapeAmazon(url, options = {}, _attempt = 1) {
       'Accept-Encoding': 'gzip, deflate, br',
       'Cache-Control': 'no-cache',
       'Pragma': 'no-cache',
+      'DNT': '1',
       'Upgrade-Insecure-Requests': '1',
       'Sec-Fetch-Dest': 'document',
       'Sec-Fetch-Mode': 'navigate',
       'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-User': '?1',
+      'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
     },
-    timeout: 20000,
+    timeout: 25000,
     maxRedirects: 10,
   };
 
@@ -180,29 +195,39 @@ async function scrapeAmazon(url, options = {}, _attempt = 1) {
   } catch (err) {
     // Retry on network errors / 5xx
     const retryable = err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT'
-      || (err.response && err.response.status >= 500);
+      || err.code === 'ECONNRESET'
+      || (err.response && err.response.status >= 500)
+      || (err.response && err.response.status === 503);
     if (retryable && _attempt < MAX_ATTEMPTS) {
-      await new Promise(r => setTimeout(r, 1200 * _attempt));
       return scrapeAmazon(url, options, _attempt + 1);
     }
     throw new Error(`Failed to fetch Amazon page: ${err.message}`);
   }
 
   const $ = cheerio.load(response.data);
+  const pageTitle = $('title').text().toLowerCase();
+  const bodyText  = $('body').text().toLowerCase();
 
-  // Detect CAPTCHA / robot check — retry with a different User-Agent
-  const bodyText = $('body').text().toLowerCase();
-  const isCaptcha = bodyText.includes('enter the characters you see below')
+  // Detect bot-check / access-denied pages — retry with a different User-Agent
+  const isBlocked = bodyText.includes('enter the characters you see below')
     || bodyText.includes('robot check')
     || bodyText.includes('type the characters')
-    || ($('title').text().toLowerCase().includes('robot'));
+    || bodyText.includes('captcha')
+    || bodyText.includes('verify you are human')
+    || bodyText.includes('automated access')
+    || pageTitle.includes('robot')
+    || pageTitle.includes('captcha')
+    || pageTitle.includes('access denied')
+    || pageTitle.includes('503')
+    // Amazon "page not found" or sign-in redirect served instead of product
+    || pageTitle === 'amazon.com'
+    || bodyText.includes('sign in to continue');
 
-  if (isCaptcha) {
+  if (isBlocked) {
     if (_attempt < MAX_ATTEMPTS) {
-      await new Promise(r => setTimeout(r, 1500 * _attempt));
       return scrapeAmazon(url, options, _attempt + 1);
     }
-    throw new Error('Amazon is showing a CAPTCHA. Please try again in a moment or use a different URL format.');
+    throw new Error('Amazon is blocking automated access. Try again in a few minutes, or reduce batch delay to space out requests.');
   }
 
   const jsonLd = extractJsonLd($);
@@ -217,8 +242,14 @@ async function scrapeAmazon(url, options = {}, _attempt = 1) {
     (jsonLd?.offers?.price ? `${jsonLd.offers.priceCurrency || ''}${jsonLd.offers.price}` : null) ||
     null;
 
-  if (!title) throw new Error('Could not extract product title. The page may be region-restricted or temporarily unavailable.');
-  if (!imageUrl) throw new Error('Could not extract product image. Try previewing the URL in a browser first to confirm it loads correctly.');
+  // If title or image is missing, the page may have loaded an unexpected layout — retry
+  if (!title || !imageUrl) {
+    if (_attempt < MAX_ATTEMPTS) {
+      return scrapeAmazon(url, options, _attempt + 1);
+    }
+    if (!title) throw new Error('Could not extract product title. Amazon may be rate-limiting requests — try increasing the delay between pins.');
+    throw new Error('Could not extract product image. Try previewing the URL in a browser first to confirm it loads correctly.');
+  }
 
   return {
     asin,

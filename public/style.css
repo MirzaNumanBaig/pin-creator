@@ -580,6 +580,11 @@ input[type="datetime-local"] { color-scheme: dark; }
 .batch-stat--ok  .batch-stat-num { color: var(--success); }
 .batch-stat--err .batch-stat-num { color: var(--error); }
 .batch-stat-label { font-size: 11px; color: var(--text-muted); font-weight: 500; }
+.batch-stat--clickable { cursor: pointer; transition: opacity 0.15s, box-shadow 0.15s; }
+.batch-stat--clickable:hover { opacity: 0.85; }
+.batch-stat--active { box-shadow: 0 0 0 2px var(--accent); }
+.batch-stat--ok.batch-stat--active  { box-shadow: 0 0 0 2px var(--success); }
+.batch-stat--err.batch-stat--active { box-shadow: 0 0 0 2px var(--error); }
 
 /* ── Progress ── */
 .progress-bar-wrap {

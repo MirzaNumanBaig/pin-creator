@@ -154,17 +154,17 @@ https://www.amazon.com/dp/B2XXXXXXXX?tag=your-tag"></textarea>
 
         <div class="card" id="batch-progress" style="display:none">
           <div class="batch-summary-grid">
-            <div class="batch-stat">
+            <div class="batch-stat batch-stat--clickable batch-stat--active" id="bstat-all" onclick="filterBatchLog('all')" title="Show all">
               <div class="batch-stat-num" id="prog-total">0</div>
               <div class="batch-stat-label">Total</div>
             </div>
-            <div class="batch-stat batch-stat--ok">
+            <div class="batch-stat batch-stat--ok batch-stat--clickable" id="bstat-ok" onclick="filterBatchLog('ok')" title="Show posted only">
               <div class="batch-stat-num" id="prog-success">0</div>
-              <div class="batch-stat-label">Posted</div>
+              <div class="batch-stat-label">Posted ↓</div>
             </div>
-            <div class="batch-stat batch-stat--err">
+            <div class="batch-stat batch-stat--err batch-stat--clickable" id="bstat-err" onclick="filterBatchLog('err')" title="Show failed only">
               <div class="batch-stat-num" id="prog-failed">0</div>
-              <div class="batch-stat-label">Failed</div>
+              <div class="batch-stat-label">Failed ↓</div>
             </div>
             <div class="batch-stat">
               <div class="batch-stat-num" id="prog-label">0/0</div>
