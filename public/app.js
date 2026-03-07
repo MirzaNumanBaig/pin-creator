@@ -733,6 +733,29 @@ function escHtml(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// ── Batch: mode switcher ──────────────────────────────────
+function setBatchMode(mode) {
+  const isUrls = mode === 'urls';
+  document.getElementById('batch-urls-section').style.display = isUrls ? '' : 'none';
+  document.getElementById('batch-csv-section').style.display  = isUrls ? 'none' : '';
+  document.getElementById('bmode-urls').classList.toggle('active', isUrls);
+  document.getElementById('bmode-csv').classList.toggle('active', !isUrls);
+}
+
+function getUrlsFromTextarea() {
+  return document.getElementById('b-urls').value
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => l.startsWith('http'));
+}
+
+document.getElementById('b-urls').addEventListener('input', () => {
+  const urls = getUrlsFromTextarea();
+  document.getElementById('b-url-count').textContent = urls.length
+    ? `${urls.length} URL${urls.length !== 1 ? 's' : ''}`
+    : '';
+});
+
 // ── Batch: file label ─────────────────────────────────────
 document.getElementById('b-file').addEventListener('change', e => {
   const f = e.target.files[0];
@@ -750,11 +773,21 @@ dropZone.addEventListener('drop', e => {
 
 // ── Batch: Start ──────────────────────────────────────────
 document.getElementById('b-start-btn').addEventListener('click', async () => {
-  const file  = document.getElementById('b-file').files[0];
+  const isUrlMode = document.getElementById('bmode-urls').classList.contains('active');
   const board = document.getElementById('b-board').value;
   const delay = document.getElementById('b-delay').value;
   const ai    = document.getElementById('b-ai').checked;
-  if (!file) { toast('Select a CSV file first', 'err'); return; }
+
+  let file;
+  if (isUrlMode) {
+    const urls = getUrlsFromTextarea();
+    if (!urls.length) { toast('Paste at least one URL', 'err'); return; }
+    const csv = 'product_url\n' + urls.join('\n');
+    file = new Blob([csv], { type: 'text/csv' });
+  } else {
+    file = document.getElementById('b-file').files[0];
+    if (!file) { toast('Select a CSV file first', 'err'); return; }
+  }
 
   const btn = document.getElementById('b-start-btn');
   btn.disabled = true; btn.textContent = 'Running…';
@@ -768,7 +801,7 @@ document.getElementById('b-start-btn').addEventListener('click', async () => {
   progBar.style.width = '0%';
 
   const form = new FormData();
-  form.append('file', file);
+  form.append('file', file, 'batch.csv');
   form.append('board', board);
   form.append('delay', delay * 1000);
   form.append('ai', ai);
