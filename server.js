@@ -10,7 +10,7 @@ const os = require('os');
 const { scrapeAmazon, extractAsin } = require('./src/scrapers/amazon');
 const { scrapeGeneric } = require('./src/scrapers/generic');
 const { composePin } = require('./src/composer');
-const { listBoards, findBoard, createBoard } = require('./src/pinterest/boards');
+const { listBoards, findBoard, createBoard, getUserAccount } = require('./src/pinterest/boards');
 const { createPinWithRetry } = require('./src/pinterest/client');
 const { polishPin } = require('./src/ai/polish');
 const { logSuccess, logFailure } = require('./src/logger');
@@ -21,15 +21,20 @@ const upload = multer({ dest: os.tmpdir() });
 
 app.use(express.json());
 
-// Read pinterest_token cookie and inject into runtime token store
+// Read pinterest_token cookie and inject into runtime token store.
+// Always reset per-request to prevent token state leaking between users
+// on warm serverless instances.
 app.use((req, res, next) => {
   const raw = req.headers.cookie || '';
   const tokenMatch = raw.match(/(?:^|;\s*)pinterest_token=([^;]+)/);
   const loggedOut = /(?:^|;\s*)pinterest_loggedout=1/.test(raw);
-  if (tokenMatch) {
+  req.userHasOAuthToken = !!tokenMatch && !loggedOut;
+  if (tokenMatch && !loggedOut) {
     setRuntimeToken(decodeURIComponent(tokenMatch[1]));
   } else if (loggedOut) {
-    setRuntimeToken(''); // signal: user explicitly disconnected, skip env var fallback
+    setRuntimeToken(''); // explicitly disconnected — skip env var fallback
+  } else {
+    setRuntimeToken(null); // no OAuth session — resets any stale state from previous request
   }
   next();
 });
@@ -37,12 +42,24 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Helpers ─────────────────────────────────────────────
+
+// Cache scraped product data for 10 minutes — prevents re-scraping on Post
+// after a successful Preview (avoids Amazon bot detection on second request).
+const _scrapeCache = new Map();
+const SCRAPE_CACHE_TTL = 10 * 60 * 1000;
+
 async function scrapeUrl(url) {
+  const cached = _scrapeCache.get(url);
+  if (cached && Date.now() - cached.ts < SCRAPE_CACHE_TTL) {
+    return { ...cached.data };
+  }
   const isAmazon = /amazon\.(com|co\.uk|de|fr|ca|com\.au|in|co\.jp)/i.test(url)
     || /amzn\.to\//i.test(url)
     || /amzn\.eu\//i.test(url)
     || extractAsin(url);
-  return isAmazon ? scrapeAmazon(url) : scrapeGeneric(url);
+  const data = await (isAmazon ? scrapeAmazon(url) : scrapeGeneric(url));
+  _scrapeCache.set(url, { data, ts: Date.now() });
+  return data;
 }
 
 function parseCSVText(text) {
@@ -128,11 +145,25 @@ app.get('/auth/logout', (req, res) => {
 
 // ─── API Routes ───────────────────────────────────────────
 
+// GET /api/me
+app.get('/api/me', async (req, res) => {
+  try {
+    const user = await getUserAccount();
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/boards
 app.get('/api/boards', async (req, res) => {
+  if (!req.userHasOAuthToken) {
+    // No OAuth cookie — guest or env-var-only server. UI should show "Not connected".
+    return res.json({ connected: false, boards: [] });
+  }
   try {
     const boards = await listBoards();
-    res.json({ boards });
+    res.json({ connected: true, boards });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

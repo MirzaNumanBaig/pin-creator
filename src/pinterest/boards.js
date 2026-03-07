@@ -74,4 +74,22 @@ async function createBoard(name, privacy = 'PUBLIC') {
   return { id: b.id, name: b.name, description: b.description || '', pinCount: 0 };
 }
 
-module.exports = { listBoards, findBoard, createBoard };
+/**
+ * Fetch the authenticated user's account info (username, profile image).
+ * @returns {Promise<{username, profileImage, accountType}>}
+ */
+async function getUserAccount() {
+  const token = await getAccessToken();
+  const response = await axios.get(`${BASE_URL}/user_account`, {
+    headers: { Authorization: `Bearer ${token}` },
+    timeout: 10000,
+  });
+  const d = response.data;
+  return {
+    username:     d.username      || null,
+    profileImage: d.profile_image || null,
+    accountType:  d.account_type  || null,
+  };
+}
+
+module.exports = { listBoards, findBoard, createBoard, getUserAccount };

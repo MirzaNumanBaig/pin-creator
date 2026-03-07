@@ -70,6 +70,27 @@ function setAuthDisconnected() {
   document.getElementById('auth-status-text').textContent = 'Not connected';
   document.getElementById('connect-btn').style.display = '';
   document.getElementById('disconnect-btn').style.display = 'none';
+  document.getElementById('auth-profile').style.display = 'none';
+}
+
+async function loadUserProfile() {
+  try {
+    const res = await fetch('/api/me');
+    if (!res.ok) return;
+    const user = await res.json();
+    if (!user.username) return;
+    const card = document.getElementById('auth-profile');
+    document.getElementById('auth-username').textContent = '@' + user.username;
+    document.getElementById('auth-account-type').textContent = (user.accountType || '').toLowerCase().replace('_', ' ');
+    const avatar = document.getElementById('auth-avatar');
+    if (user.profileImage) {
+      avatar.src = user.profileImage;
+      avatar.style.display = '';
+    } else {
+      avatar.style.display = 'none';
+    }
+    card.style.display = 'flex';
+  } catch (_) { /* ignore */ }
 }
 
 // ── Disconnect ────────────────────────────────────────────
@@ -121,10 +142,21 @@ async function loadBoards() {
   try {
     const res = await fetch('/api/boards');
     if (!res.ok) throw new Error('Failed');
-    const { boards } = await res.json();
-    boardsCache = boards;
+    const data = await res.json();
+    if (!data.connected) {
+      setAuthDisconnected();
+      boardsCache = [];
+      document.querySelectorAll('.row-board-select').forEach(sel => {
+        sel.innerHTML = '<option value="">Connect Pinterest first</option>';
+      });
+      const bb = document.getElementById('b-board');
+      if (bb) bb.innerHTML = '<option value="">Connect Pinterest first</option>';
+      return;
+    }
+    boardsCache = data.boards;
     updateAllBoardSelects();
     setAuthConnected();
+    loadUserProfile();
   } catch {
     setAuthDisconnected();
     boardsCache = [];
