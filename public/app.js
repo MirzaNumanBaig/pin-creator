@@ -8,11 +8,9 @@
 })();
 
 function updateThemeBtn(theme) {
-  const icon  = document.getElementById('theme-icon');
-  const label = document.getElementById('theme-label');
+  const icon = document.getElementById('theme-icon');
   if (!icon) return;
-  if (theme === 'dark') { icon.textContent = '☀'; label.textContent = 'Light mode'; }
-  else                  { icon.textContent = '☾'; label.textContent = 'Dark mode'; }
+  icon.textContent = theme === 'dark' ? '☀' : '☾';
 }
 
 document.getElementById('theme-toggle').addEventListener('click', () => {
@@ -79,6 +77,7 @@ document.getElementById('disconnect-btn').addEventListener('click', async () => 
   try {
     await fetch('/auth/logout');
   } catch (_) { /* ignore network errors */ }
+  localStorage.setItem('pin_disconnected', '1');
   boardsCache = [];
   setAuthDisconnected();
   document.querySelectorAll('.row-board-select').forEach(sel => {
@@ -109,6 +108,16 @@ function updateAllBoardSelects(preselectId) {
 }
 
 async function loadBoards() {
+  if (localStorage.getItem('pin_disconnected') === '1') {
+    setAuthDisconnected();
+    boardsCache = [];
+    document.querySelectorAll('.row-board-select').forEach(sel => {
+      sel.innerHTML = '<option value="">Connect Pinterest first</option>';
+    });
+    const bb = document.getElementById('b-board');
+    if (bb) bb.innerHTML = '<option value="">Connect Pinterest first</option>';
+    return;
+  }
   try {
     const res = await fetch('/api/boards');
     if (!res.ok) throw new Error('Failed');
@@ -172,6 +181,7 @@ async function createBoardFromModal() {
 (function handleOAuthParams() {
   const p = new URLSearchParams(window.location.search);
   if (p.get('connected') === '1') {
+    localStorage.removeItem('pin_disconnected');
     toast('Pinterest connected successfully!');
     window.history.replaceState({}, '', '/');
   } else if (p.get('auth_error')) {
@@ -275,12 +285,43 @@ function toggleSchedule(id) {
   }
 }
 
+function toggleAiOptions(id) {
+  const on = document.getElementById(`r${id}-ai`).checked;
+  document.getElementById(`r${id}-ai-opts`).style.display = on ? '' : 'none';
+}
+
+function cloneRow(srcId) {
+  rowCounter++;
+  const newId = rowCounter;
+  const srcUrl     = document.getElementById(`r${srcId}-url`)?.value    || '';
+  const srcTags    = document.getElementById(`r${srcId}-tags`)?.value   || '';
+  const srcBoard   = document.getElementById(`r${srcId}-board`)?.value  || '';
+  const srcAi      = document.getElementById(`r${srcId}-ai`)?.checked   || false;
+  const srcAiTitle = document.getElementById(`r${srcId}-ai-title`)?.checked ?? true;
+  const srcAiDesc  = document.getElementById(`r${srcId}-ai-desc`)?.checked  ?? true;
+
+  document.getElementById('pin-rows').insertAdjacentHTML('beforeend', buildRowHtml(newId));
+  document.getElementById(`r${newId}-board`).innerHTML = boardOptionsHtml(srcBoard);
+  document.getElementById(`r${newId}-url`).value  = srcUrl;
+  document.getElementById(`r${newId}-tags`).value = srcTags;
+  if (srcAi) {
+    document.getElementById(`r${newId}-ai`).checked = true;
+    toggleAiOptions(newId);
+    document.getElementById(`r${newId}-ai-title`).checked = srcAiTitle;
+    document.getElementById(`r${newId}-ai-desc`).checked  = srcAiDesc;
+  }
+  updateRowNumbers();
+}
+
 function buildRowHtml(id) {
   return `
 <div class="pin-row" id="pin-row-${id}">
   <div class="pin-row-header">
     <span class="row-num">URL # <span class="row-num-val">${rowCounter}</span></span>
-    <button class="row-remove-btn" onclick="removeRow(${id})" title="Remove row">✕</button>
+    <div class="row-header-btns">
+      <button class="btn--xs" onclick="cloneRow(${id})" title="Clone row">⧉ Clone</button>
+      <button class="row-remove-btn" onclick="removeRow(${id})" title="Remove row">✕</button>
+    </div>
   </div>
   <div class="pin-row-body">
     <div class="row-form">
@@ -300,13 +341,21 @@ function buildRowHtml(id) {
       </div>
       <div class="row-toggles">
         <span class="toggle-label">
-          <label class="toggle"><input type="checkbox" id="r${id}-ai" /><span class="slider"></span></label>
+          <label class="toggle"><input type="checkbox" id="r${id}-ai" onchange="toggleAiOptions(${id})" /><span class="slider"></span></label>
           AI Polish <span class="hint">(GPT-4o-mini)</span>
         </span>
         <span class="toggle-label">
           <label class="toggle"><input type="checkbox" id="r${id}-sched-chk" onchange="toggleSchedule(${id})" /><span class="slider"></span></label>
           Schedule for later
         </span>
+      </div>
+      <div class="ai-subopts" id="r${id}-ai-opts" style="display:none">
+        <label class="ai-subopt-label">
+          <input type="checkbox" id="r${id}-ai-title" checked /> Improve Title
+        </label>
+        <label class="ai-subopt-label">
+          <input type="checkbox" id="r${id}-ai-desc" checked /> Improve Description
+        </label>
       </div>
       <div class="schedule-panel" id="r${id}-sched-panel" style="display:none">
         <div class="schedule-grid">
@@ -343,10 +392,12 @@ function buildRowHtml(id) {
 
 // ── Preview row ───────────────────────────────────────────
 async function previewRow(id) {
-  const url   = document.getElementById(`r${id}-url`).value.trim();
-  const board = document.getElementById(`r${id}-board`).value;
-  const tags  = document.getElementById(`r${id}-tags`).value;
-  const ai    = document.getElementById(`r${id}-ai`).checked;
+  const url     = document.getElementById(`r${id}-url`).value.trim();
+  const board   = document.getElementById(`r${id}-board`).value;
+  const tags    = document.getElementById(`r${id}-tags`).value;
+  const ai      = document.getElementById(`r${id}-ai`).checked;
+  const aiTitle = ai ? (document.getElementById(`r${id}-ai-title`)?.checked ?? true) : false;
+  const aiDesc  = ai ? (document.getElementById(`r${id}-ai-desc`)?.checked  ?? true) : false;
   if (!url) { toast('Product URL is required', 'err'); return; }
 
   const btn = document.querySelector(`#pin-row-${id} .btn--secondary`);
@@ -354,7 +405,7 @@ async function previewRow(id) {
   try {
     const res  = await fetch('/api/preview', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, board, hashtags: tags, ai }),
+      body: JSON.stringify({ url, board, hashtags: tags, ai, aiTitle, aiDesc }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
@@ -385,17 +436,19 @@ async function postRow(id) {
   const board    = document.getElementById(`r${id}-board`).value;
   const tags     = document.getElementById(`r${id}-tags`).value;
   const ai       = document.getElementById(`r${id}-ai`).checked;
+  const aiTitle  = ai ? (document.getElementById(`r${id}-ai-title`)?.checked ?? true) : false;
+  const aiDesc   = ai ? (document.getElementById(`r${id}-ai-desc`)?.checked  ?? true) : false;
   const schedule = document.getElementById(`r${id}-sched-chk`).checked;
 
   if (!url)   { toast('Product URL is required', 'err'); return; }
   if (!board) { toast('Select a board first', 'err');    return; }
 
-  if (schedule) { scheduleRow(id, url, board, tags, ai); return; }
+  if (schedule) { scheduleRow(id, url, board, tags, ai, aiTitle, aiDesc); return; }
 
-  await doPostNow(id, url, board, tags, ai);
+  await doPostNow(id, url, board, tags, ai, aiTitle, aiDesc);
 }
 
-async function doPostNow(id, url, board, tags, ai) {
+async function doPostNow(id, url, board, tags, ai, aiTitle = true, aiDesc = true) {
   const btn      = document.getElementById(`r${id}-post-btn`);
   const resultEl = document.getElementById(`r${id}-result`);
   btn.disabled = true; btn.textContent = 'Posting…';
@@ -403,7 +456,7 @@ async function doPostNow(id, url, board, tags, ai) {
   try {
     const res  = await fetch('/api/post', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, board, hashtags: tags, ai }),
+      body: JSON.stringify({ url, board, hashtags: tags, ai, aiTitle, aiDesc }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
@@ -456,7 +509,7 @@ function saveScheduledStorage() {
   );
 }
 
-function scheduleRow(id, url, board, tags, ai) {
+function scheduleRow(id, url, board, tags, ai, aiTitle = true, aiDesc = true) {
   const tz      = document.getElementById(`r${id}-tz`).value;
   const dtVal   = document.getElementById(`r${id}-datetime`).value;
   if (!dtVal) { toast('Select a date and time', 'err'); return; }
@@ -467,7 +520,7 @@ function scheduleRow(id, url, board, tags, ai) {
   const boardName = boardsCache.find(b => b.id === board)?.name || board;
   const item = {
     id: `sch-${Date.now()}`,
-    url, board, boardName, tags, ai, tz,
+    url, board, boardName, tags, ai, aiTitle, aiDesc, tz,
     fireAt: fireAt.toISOString(),
     title:    document.getElementById(`r${id}-prev-title`)?.textContent || url,
     imageUrl: document.getElementById(`r${id}-prev-img`)?.src || '',
@@ -494,7 +547,7 @@ async function fireScheduled(scheduledId) {
   try {
     const res  = await fetch('/api/post', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: item.url, board: item.board, hashtags: item.tags, ai: item.ai }),
+      body: JSON.stringify({ url: item.url, board: item.board, hashtags: item.tags, ai: item.ai, aiTitle: item.aiTitle ?? true, aiDesc: item.aiDesc ?? true }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);

@@ -152,7 +152,7 @@ app.post('/api/boards', async (req, res) => {
 
 // POST /api/preview  { url, affiliateUrl, board, hashtags, ai }
 app.post('/api/preview', async (req, res) => {
-  const { url, board = 'PREVIEW', hashtags = [], ai = false } = req.body;
+  const { url, board = 'PREVIEW', hashtags = [], ai = false, aiTitle = true, aiDesc = true } = req.body;
   const affiliateUrl = req.body.affiliateUrl || url;
   if (!url) return res.status(400).json({ error: 'url is required' });
 
@@ -160,11 +160,11 @@ app.post('/api/preview', async (req, res) => {
     const productData = await scrapeUrl(url);
     let tags = Array.isArray(hashtags) ? hashtags : hashtags.split(',').map(t => t.trim()).filter(Boolean);
 
-    if (ai) {
+    if (ai && (aiTitle || aiDesc)) {
       try {
         const polished = await polishPin(productData, tags);
-        productData.title = polished.title;
-        productData.description = polished.description;
+        if (aiTitle) productData.title = polished.title;
+        if (aiDesc)  productData.description = polished.description;
         tags = [];
       } catch (e) {
         // fall through with original
@@ -188,7 +188,7 @@ app.post('/api/preview', async (req, res) => {
 
 // POST /api/post  { url, affiliateUrl, board, hashtags, ai }
 app.post('/api/post', async (req, res) => {
-  const { url, board, hashtags = [], ai = false } = req.body;
+  const { url, board, hashtags = [], ai = false, aiTitle = true, aiDesc = true } = req.body;
   const affiliateUrl = req.body.affiliateUrl || url;
   if (!url || !board) {
     return res.status(400).json({ error: 'url and board are required' });
@@ -198,11 +198,11 @@ app.post('/api/post', async (req, res) => {
     const productData = await scrapeUrl(url);
     let tags = Array.isArray(hashtags) ? hashtags : hashtags.split(',').map(t => t.trim()).filter(Boolean);
 
-    if (ai) {
+    if (ai && (aiTitle || aiDesc)) {
       try {
         const polished = await polishPin(productData, tags);
-        productData.title = polished.title;
-        productData.description = polished.description;
+        if (aiTitle) productData.title = polished.title;
+        if (aiDesc)  productData.description = polished.description;
         tags = [];
       } catch (e) { /* use original */ }
     }
