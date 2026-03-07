@@ -718,6 +718,50 @@ input[type="datetime-local"] { color-scheme: dark; }
 .log-row .log-pin { color: var(--success); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
 .log-row .log-err { color: var(--error); font-size: 12px; }
 
+/* ── Batch Preview Card ── */
+.batch-preview-card { padding: 22px 28px; }
+.batch-preview-inner {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 24px;
+  align-items: flex-start;
+}
+@media (max-width: 600px) {
+  .batch-preview-inner { grid-template-columns: 1fr; }
+}
+.batch-preview-img-wrap {
+  width: 100%;
+  background: var(--surface2);
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.batch-preview-img-wrap img {
+  width: 100%;
+  display: block;
+  border-radius: 10px;
+  object-fit: cover;
+}
+.batch-preview-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.batch-preview-meta { min-width: 0; }
+.batch-preview-meta-row {
+  display: flex;
+  gap: 14px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
 /* ── Tabs ── */
 .tab { display: none; }
 .tab.active { display: block; }

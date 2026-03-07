@@ -952,6 +952,74 @@ dropZone.addEventListener('drop', e => {
   if (f) { document.getElementById('b-file').files = e.dataTransfer.files; document.getElementById('file-label').textContent = f.name; }
 });
 
+// ── Batch: Preview first URL ──────────────────────────────
+async function previewBatch() {
+  const isUrlMode = document.getElementById('bmode-urls').classList.contains('active');
+  const board   = document.getElementById('b-board').value || 'PREVIEW';
+  const ai      = document.getElementById('b-ai').checked;
+  const aiTitle = ai ? (document.getElementById('b-ai-title')?.checked ?? true) : false;
+  const aiDesc  = ai ? (document.getElementById('b-ai-desc')?.checked ?? true) : false;
+
+  let firstUrl = '';
+  if (isUrlMode) {
+    const urls = getUrlsFromTextarea();
+    if (!urls.length) { toast('Paste at least one URL to preview', 'err'); return; }
+    firstUrl = urls[0];
+  } else {
+    const file = document.getElementById('b-file').files[0];
+    if (!file) { toast('Upload a CSV file first', 'err'); return; }
+    try {
+      const text = await file.text();
+      const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+      const header = lines[0].split(',').map(h => h.trim().toLowerCase());
+      const colIdx = header.indexOf('product_url');
+      if (colIdx === -1) { toast('CSV must have a product_url column', 'err'); return; }
+      const firstData = lines[1];
+      if (!firstData) { toast('No data rows in CSV', 'err'); return; }
+      const cols = firstData.match(/(\".*?\"|[^,]+)(?=\s*,|\s*$)/g) || [];
+      firstUrl = (cols[colIdx] || '').replace(/^\"|\"$/g, '').trim();
+    } catch { toast('Could not read CSV file', 'err'); return; }
+  }
+
+  if (!firstUrl) { toast('Could not find a URL to preview', 'err'); return; }
+
+  const btn = document.getElementById('b-preview-btn');
+  btn.disabled = true; btn.textContent = 'Scraping…';
+
+  try {
+    const res  = await fetch('/api/preview', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: firstUrl, board, hashtags: [], ai, aiTitle, aiDesc }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+
+    const { pin, meta } = data;
+    const imgEl = document.getElementById('b-prev-img');
+    if (pin.imageUrl) { imgEl.src = pin.imageUrl; imgEl.style.display = ''; }
+    else { imgEl.style.display = 'none'; }
+
+    document.getElementById('b-prev-title').textContent = pin.title;
+    document.getElementById('b-prev-desc').textContent  = pin.description;
+    const lnk = document.getElementById('b-prev-link');
+    lnk.href = pin.link;
+    lnk.textContent = pin.link.length > 55 ? pin.link.slice(0, 52) + '…' : pin.link;
+    document.getElementById('b-prev-tlen').textContent = meta.titleLen;
+    document.getElementById('b-prev-dlen').textContent = meta.descLen;
+    document.getElementById('b-prev-asin').textContent  = meta.asin  ? `ASIN: ${meta.asin}`   : '';
+    document.getElementById('b-prev-price').textContent = meta.price ? `Price: ${meta.price}` : '';
+
+    const card = document.getElementById('batch-preview-card');
+    card.style.display = '';
+    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    toast('Preview ready');
+  } catch (err) {
+    toast(err.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Preview First URL';
+  }
+}
+
 // ── Batch: Start ──────────────────────────────────────────
 document.getElementById('b-start-btn').addEventListener('click', async () => {
   const isUrlMode = document.getElementById('bmode-urls').classList.contains('active');

@@ -193,7 +193,33 @@ https://www.amazon.com/dp/B2XXXXXXXX?tag=your-tag"></textarea>
               </div>
             </div>
           </div>
-          <button class="btn btn--primary" id="b-start-btn">Start Batch</button>
+          <div class="row-actions">
+            <button class="btn btn--secondary" id="b-preview-btn" onclick="previewBatch()">Preview First URL</button>
+            <button class="btn btn--primary" id="b-start-btn">Start Batch</button>
+          </div>
+        </div>
+
+        <!-- Batch preview panel -->
+        <div class="card batch-preview-card" id="batch-preview-card" style="display:none">
+          <div class="batch-preview-inner">
+            <div class="batch-preview-img-wrap">
+              <img id="b-prev-img" src="" alt="" onerror="this.style.display='none'" />
+            </div>
+            <div class="batch-preview-meta">
+              <div class="batch-preview-label">Preview — First URL</div>
+              <div class="pin-title" id="b-prev-title"></div>
+              <div class="pin-desc"  id="b-prev-desc"></div>
+              <a class="pin-link"    id="b-prev-link" href="#" target="_blank"></a>
+              <div class="char-counts">
+                <span id="b-prev-tlen">0</span>/100 title &nbsp;·&nbsp;
+                <span id="b-prev-dlen">0</span>/500 desc
+              </div>
+              <div class="batch-preview-meta-row">
+                <span id="b-prev-asin" class="hint"></span>
+                <span id="b-prev-price" class="hint"></span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="card" id="batch-progress" style="display:none">
