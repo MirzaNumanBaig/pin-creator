@@ -41,10 +41,11 @@ function randomReferrer() {
   return REFERRERS[Math.floor(Math.random() * REFERRERS.length)];
 }
 
-// Generate a plausible session-id cookie to mimic a returning visitor
+// Generate a plausible session-id cookie to mimic a returning visitor.
+// Do NOT include sp-cdn or other geo-specific cookies — they trigger region mismatch checks.
 function fakeSessionCookies() {
   const sid = Array.from({ length: 17 }, () => Math.floor(Math.random() * 10)).join('');
-  return `session-id=${sid}; i18n-prefs=USD; sp-cdn="L5Z9:PK"; skin=noskin`;
+  return `session-id=${sid}; i18n-prefs=USD; skin=noskin`;
 }
 
 /**
@@ -188,10 +189,11 @@ async function scrapeAmazon(url, options = {}, _attempt = 1) {
   const MAX_ATTEMPTS = 6;
   const asin = extractAsin(url);
 
-  // Add random pre-request jitter to avoid synchronized requests that trigger
-  // Amazon's rate-limiter. Even first attempt gets a small jitter for batch calls.
-  const baseDelay = _attempt === 1 ? 300 : 2000 * _attempt;
-  await new Promise(r => setTimeout(r, jitter(baseDelay)));
+  // Only delay on retries — never delay the first attempt (kills preview speed).
+  // Use a flat 1500ms base with jitter so retries space out without stacking up.
+  if (_attempt > 1) {
+    await new Promise(r => setTimeout(r, jitter(1500)));
+  }
 
   // On later attempts, switch to mobile UA + mobile Amazon URL as fallback
   const useMobile = _attempt >= 4;
@@ -225,8 +227,8 @@ async function scrapeAmazon(url, options = {}, _attempt = 1) {
 
   const axiosConfig = {
     headers,
-    timeout: 25000,
-    maxRedirects: 10,
+    timeout: 12000,
+    maxRedirects: 8,
   };
 
   if (options.proxy) {
