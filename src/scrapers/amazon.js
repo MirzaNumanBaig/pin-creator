@@ -33,46 +33,80 @@ function extractAsin(url) {
 }
 
 /**
- * Extract the highest-resolution image URL from Amazon's image data.
- * Amazon stores image variants in a JSON blob inside the page.
+ * Parse JSON-LD structured data blocks — Amazon often includes Product schema.
  */
-function extractHighResImage($, url) {
-  // Try to pull the colorImages data blob which has the highest-res URLs
-  const scripts = $('script').toArray();
-  for (const script of scripts) {
+function extractJsonLd($) {
+  const results = [];
+  $('script[type="application/ld+json"]').each((_, el) => {
+    try {
+      const data = JSON.parse($(el).html() || '');
+      const items = Array.isArray(data) ? data : [data];
+      items.forEach(item => {
+        if (item['@type'] === 'Product' || item['@type'] === 'ItemPage') results.push(item);
+      });
+    } catch (_) { /* ignore */ }
+  });
+  return results[0] || null;
+}
+
+/**
+ * Extract the highest-resolution image URL from Amazon's image data.
+ */
+function extractHighResImage($) {
+  // 1. colorImages JSON blob (highest res)
+  for (const script of $('script').toArray()) {
     const text = $(script).html() || '';
     const match = text.match(/'colorImages'\s*:\s*\{[^}]*'initial'\s*:\s*(\[[\s\S]*?\])\s*\}/);
     if (match) {
       try {
         const images = JSON.parse(match[1]);
         const first = images[0];
-        // Prefer hiRes, fall back to large
-        if (first && (first.hiRes || first.large)) {
-          return first.hiRes || first.large;
-        }
-      } catch (_) { /* ignore parse errors */ }
+        if (first && (first.hiRes || first.large)) return first.hiRes || first.large;
+      } catch (_) { /* ignore */ }
     }
   }
 
-  // Fallback: #landingImage data-old-hires or src
+  // 2. #landingImage
   const landing = $('#landingImage');
   if (landing.length) {
-    return landing.attr('data-old-hires') || landing.attr('src') || null;
+    const src = landing.attr('data-old-hires') || landing.attr('data-a-dynamic-image');
+    if (src && !src.startsWith('{')) return src;
+    const plain = landing.attr('src');
+    if (plain) return plain;
   }
 
-  // Fallback: first img inside #imgTagWrapperId
+  // 3. #imgTagWrapperId
   const wrapper = $('#imgTagWrapperId img');
-  if (wrapper.length) return wrapper.first().attr('src') || null;
+  if (wrapper.length) {
+    const src = wrapper.first().attr('src');
+    if (src) return src;
+  }
 
-  // Last resort: og:image
+  // 4. .a-dynamic-image
+  const dynamic = $('.a-dynamic-image').first();
+  if (dynamic.length) {
+    const src = dynamic.attr('src');
+    if (src) return src;
+  }
+
+  // 5. og:image
   return $('meta[property="og:image"]').attr('content') || null;
 }
 
 /**
  * Extract product title.
  */
-function extractTitle($) {
-  const selectors = ['#productTitle', 'h1.a-size-large', 'h1'];
+function extractTitle($, jsonLd) {
+  // JSON-LD is most reliable
+  if (jsonLd?.name) return String(jsonLd.name).trim();
+
+  const selectors = [
+    '#productTitle',
+    '#title span',
+    'h1.a-size-large',
+    'h1#title',
+    'h1',
+  ];
   for (const sel of selectors) {
     const text = $(sel).first().text().trim();
     if (text) return text;
@@ -83,7 +117,7 @@ function extractTitle($) {
 /**
  * Extract bullet-point description, falling back to product description paragraph.
  */
-function extractDescription($) {
+function extractDescription($, jsonLd) {
   // Bullet points
   const bullets = [];
   $('#feature-bullets ul li span.a-list-item').each((_, el) => {
@@ -95,21 +129,27 @@ function extractDescription($) {
   if (bullets.length) return bullets.join(' ');
 
   // Product description paragraph
-  const desc = $('#productDescription p').first().text().trim();
+  const desc = $('#productDescription p').first().text().trim()
+    || $('#productDescription').first().text().trim();
   if (desc) return desc;
+
+  // JSON-LD description
+  if (jsonLd?.description) return String(jsonLd.description).trim();
 
   // og:description fallback
   return $('meta[property="og:description"]').attr('content') || null;
 }
 
 /**
- * Main Amazon scraper.
+ * Main Amazon scraper with retry logic.
  * @param {string} url - Amazon product URL
  * @param {object} options
  * @param {string} [options.proxy] - Optional proxy URL
+ * @param {number} [_attempt=1] - Internal retry counter
  * @returns {Promise<{asin, title, description, imageUrl, price, sourceUrl}>}
  */
-async function scrapeAmazon(url, options = {}) {
+async function scrapeAmazon(url, options = {}, _attempt = 1) {
+  const MAX_ATTEMPTS = 3;
   const asin = extractAsin(url);
 
   const axiosConfig = {
@@ -120,9 +160,13 @@ async function scrapeAmazon(url, options = {}) {
       'Accept-Encoding': 'gzip, deflate, br',
       'Cache-Control': 'no-cache',
       'Pragma': 'no-cache',
+      'Upgrade-Insecure-Requests': '1',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
     },
-    timeout: 15000,
-    maxRedirects: 5,
+    timeout: 20000,
+    maxRedirects: 10,
   };
 
   if (options.proxy) {
@@ -130,27 +174,51 @@ async function scrapeAmazon(url, options = {}) {
     axiosConfig.httpsAgent = new HttpsProxyAgent(options.proxy);
   }
 
-  const response = await axios.get(url, axiosConfig);
-  const $ = cheerio.load(response.data);
-
-  // Detect CAPTCHA / robot check page
-  const bodyText = $('body').text().toLowerCase();
-  if (bodyText.includes('enter the characters you see below') || bodyText.includes('robot check')) {
-    throw new Error('Amazon returned a CAPTCHA page. Try using --playwright mode or a proxy.');
+  let response;
+  try {
+    response = await axios.get(url, axiosConfig);
+  } catch (err) {
+    // Retry on network errors / 5xx
+    const retryable = err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT'
+      || (err.response && err.response.status >= 500);
+    if (retryable && _attempt < MAX_ATTEMPTS) {
+      await new Promise(r => setTimeout(r, 1200 * _attempt));
+      return scrapeAmazon(url, options, _attempt + 1);
+    }
+    throw new Error(`Failed to fetch Amazon page: ${err.message}`);
   }
 
-  const title = extractTitle($);
-  const description = extractDescription($);
-  const imageUrl = extractHighResImage($, url);
+  const $ = cheerio.load(response.data);
+
+  // Detect CAPTCHA / robot check — retry with a different User-Agent
+  const bodyText = $('body').text().toLowerCase();
+  const isCaptcha = bodyText.includes('enter the characters you see below')
+    || bodyText.includes('robot check')
+    || bodyText.includes('type the characters')
+    || ($('title').text().toLowerCase().includes('robot'));
+
+  if (isCaptcha) {
+    if (_attempt < MAX_ATTEMPTS) {
+      await new Promise(r => setTimeout(r, 1500 * _attempt));
+      return scrapeAmazon(url, options, _attempt + 1);
+    }
+    throw new Error('Amazon is showing a CAPTCHA. Please try again in a moment or use a different URL format.');
+  }
+
+  const jsonLd = extractJsonLd($);
+  const title = extractTitle($, jsonLd);
+  const description = extractDescription($, jsonLd);
+  const imageUrl = extractHighResImage($);
 
   // Price (informational only — not used in pin)
   const price =
     $('.a-price .a-offscreen').first().text().trim() ||
     $('#priceblock_ourprice').text().trim() ||
+    (jsonLd?.offers?.price ? `${jsonLd.offers.priceCurrency || ''}${jsonLd.offers.price}` : null) ||
     null;
 
-  if (!title) throw new Error('Could not extract product title from Amazon page.');
-  if (!imageUrl) throw new Error('Could not extract product image from Amazon page.');
+  if (!title) throw new Error('Could not extract product title. The page may be region-restricted or temporarily unavailable.');
+  if (!imageUrl) throw new Error('Could not extract product image. Try previewing the URL in a browser first to confirm it loads correctly.');
 
   return {
     asin,

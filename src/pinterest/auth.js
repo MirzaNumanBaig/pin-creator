@@ -22,16 +22,18 @@ function setRuntimeToken(token) {
 }
 
 /**
- * Load tokens from memory → tokens.json → .env fallback.
+ * Load tokens — OAuth cookie takes priority so each user posts to their own account.
+ * Falls back to PINTEREST_ACCESS_TOKEN env var when no OAuth session exists.
  */
 function loadTokens() {
   if (_runtimeToken === '') return null; // explicitly logged out — skip all fallbacks
-  // Env var takes priority — it has full API access (vs Trial-tier OAuth tokens)
-  if (process.env.PINTEREST_ACCESS_TOKEN) {
-    return { access_token: process.env.PINTEREST_ACCESS_TOKEN, refresh_token: null, expires_at: null };
-  }
+  // OAuth token takes priority — user connected their own Pinterest account
   if (_runtimeToken) {
     return { access_token: _runtimeToken, refresh_token: null, expires_at: null };
+  }
+  // Fallback: env var (app-level default account, used when no user is connected)
+  if (process.env.PINTEREST_ACCESS_TOKEN) {
+    return { access_token: process.env.PINTEREST_ACCESS_TOKEN, refresh_token: null, expires_at: null };
   }
   if (fs.existsSync(TOKENS_FILE)) {
     try {
