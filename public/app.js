@@ -952,7 +952,50 @@ dropZone.addEventListener('drop', e => {
   if (f) { document.getElementById('b-file').files = e.dataTransfer.files; document.getElementById('file-label').textContent = f.name; }
 });
 
-// ── Batch: Preview first URL ──────────────────────────────
+// ── Batch Results Panel ───────────────────────────────────
+function showBatchResults(title) {
+  document.getElementById('batch-results-empty').style.display  = 'none';
+  document.getElementById('batch-results-clear').style.display  = '';
+  document.getElementById('batch-results-title').textContent    = title || 'Results';
+}
+
+function clearBatchResults() {
+  document.getElementById('batch-results-empty').style.display  = '';
+  document.getElementById('batch-results-clear').style.display  = 'none';
+  document.getElementById('batch-results-title').textContent    = 'Results';
+  document.getElementById('batch-preview-list').style.display   = 'none';
+  document.getElementById('batch-preview-list').innerHTML       = '';
+  document.getElementById('batch-progress').style.display       = 'none';
+  document.getElementById('batch-log').innerHTML                = '';
+}
+
+// Returns URLs already pending/recently-fired (within 24h) across scheduledPins
+function getDuplicateUrls(urls) {
+  const DAY = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const blocked = new Set();
+
+  scheduledPins.forEach(item => {
+    const isActive = item.status === 'pending' || item.status === 'firing';
+    const isRecent = item.status === 'done' && item.scheduledAt && (now - new Date(item.scheduledAt).getTime() < DAY);
+    if (!isActive && !isRecent) return;
+
+    const itemUrls = item.urls || [];
+    itemUrls.forEach(u => blocked.add(u));
+    if (item.csvText) {
+      item.csvText.split('\n').forEach(line => {
+        const u = line.trim().replace(/^\"|\"$/g, '');
+        if (u && !u.toLowerCase().startsWith('product_url')) blocked.add(u);
+      });
+    }
+    // Single-pin scheduled items
+    if (item.url) blocked.add(item.url);
+  });
+
+  return urls.filter(u => blocked.has(u));
+}
+
+// ── Batch: Preview All URLs ───────────────────────────────
 async function previewBatch() {
   const isUrlMode = document.getElementById('bmode-urls').classList.contains('active');
   const board   = document.getElementById('b-board').value || 'PREVIEW';
@@ -988,7 +1031,8 @@ async function previewBatch() {
   btn.disabled = true;
   btn.textContent = `Scraping ${urls.length} URL${urls.length > 1 ? 's' : ''}…`;
 
-  // Show loading placeholders immediately
+  // Show results panel with loading placeholders
+  showBatchResults(`Preview — ${urls.length} URL${urls.length > 1 ? 's' : ''}`);
   list.style.display = '';
   list.innerHTML = urls.map((url, i) => `
     <div class="bprev-item loading" id="bprev-${i}">
@@ -998,7 +1042,7 @@ async function previewBatch() {
         <div class="bprev-title" style="color:var(--text-muted)">Loading…</div>
       </div>
     </div>`).join('');
-  list.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  document.getElementById('batch-results-body').scrollTop = 0;
 
   // Fetch with concurrency limit of 3 — prevents 429 rate-limit errors from ScraperAPI
   const CONCURRENCY = 3;
@@ -1092,6 +1136,21 @@ document.getElementById('b-start-btn').addEventListener('click', async () => {
 
   if (!board) { toast('Select a board first', 'err'); return; }
 
+  // ── Duplicate URL check (only for URL-mode; CSV check is harder) ──
+  if (isUrlMode && urls.length) {
+    const dupes = getDuplicateUrls(urls);
+    if (dupes.length === urls.length) {
+      toast(`All ${urls.length} URLs are already scheduled or were posted in the last 24h. Remove duplicates to continue.`, 'err');
+      return;
+    }
+    if (dupes.length > 0) {
+      urls = urls.filter(u => !dupes.includes(u));
+      toast(`Skipped ${dupes.length} duplicate URL${dupes.length > 1 ? 's' : ''} already scheduled within 24h.`, 'warn');
+      const csv = 'product_url\n' + urls.join('\n');
+      file = new Blob([csv], { type: 'text/csv' });
+    }
+  }
+
   // ── Schedule batch for later ──
   if (schedule) {
     const tz    = document.getElementById('b-tz').value;
@@ -1110,6 +1169,7 @@ document.getElementById('b-start-btn').addEventListener('click', async () => {
       board, boardName, ai, aiTitle, aiDesc, tz,
       delay: parseInt(delay, 10),
       fireAt: fireAt.toISOString(),
+      scheduledAt: new Date().toISOString(),
       title: `Batch: ${urlCount} URLs → ${boardName}`,
       status: 'pending',
     };
@@ -1142,6 +1202,10 @@ document.getElementById('b-start-btn').addEventListener('click', async () => {
   const progSuccess = document.getElementById('prog-success');
   const progFailed  = document.getElementById('prog-failed');
   const batchLog    = document.getElementById('batch-log');
+
+  // Show results panel; clear preview if any
+  document.getElementById('batch-preview-list').style.display = 'none';
+  showBatchResults('Batch Running…');
   progCard.style.display = '';
   batchLog.innerHTML = '';
   progBar.style.width = '0%';
@@ -1150,6 +1214,7 @@ document.getElementById('b-start-btn').addEventListener('click', async () => {
   progFailed.textContent = '0';
   filterBatchLog('all');
   progLbl.textContent = '0/0';
+  document.getElementById('batch-results-body').scrollTop = 0;
 
   const form = new FormData();
   form.append('file', file, 'batch.csv');
@@ -1204,11 +1269,14 @@ document.getElementById('b-start-btn').addEventListener('click', async () => {
           batchLog.appendChild(row);
           batchLog.scrollTop = batchLog.scrollHeight;
         } else if (ev.type === 'done') {
+          document.getElementById('batch-results-title').textContent =
+            `Done — ${ev.success} posted${ev.failed > 0 ? `, ${ev.failed} failed` : ''}`;
           toast(`Done: ${ev.success} posted, ${ev.failed} failed`, ev.failed > 0 ? 'warn' : 'ok');
         }
       }
     }
   } catch (err) {
+    document.getElementById('batch-results-title').textContent = 'Batch Error';
     toast(err.message, 'err');
   } finally {
     btn.disabled = false; btn.textContent = 'Start Batch';
