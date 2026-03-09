@@ -953,36 +953,31 @@ dropZone.addEventListener('drop', e => {
 });
 
 // ── Batch Results Panel ───────────────────────────────────
-function showBatchResults() {
-  document.getElementById('batch-results-empty').style.display = 'none';
-  document.getElementById('batch-results-clear').style.display = '';
-}
+const BATCH_INFO_PLACEHOLDER = '<div class="rcard-placeholder">Start or schedule a batch<br>to see details here.</div>';
+const PREVIEW_PLACEHOLDER    = '<div class="rcard-placeholder">Click <strong>Preview All URLs</strong><br>to see product previews here.</div>';
 
 function clearBatchResults() {
-  document.getElementById('batch-results-empty').style.display = '';
-  document.getElementById('batch-results-clear').style.display = 'none';
-  document.getElementById('batch-results-title').textContent   = 'Results';
-  document.getElementById('rcard-info').style.display          = 'none';
-  document.getElementById('rcard-info-body').innerHTML         = '';
-  document.getElementById('rcard-info-status').textContent     = '';
-  document.getElementById('rcard-preview').style.display       = 'none';
-  document.getElementById('batch-preview-list').innerHTML      = '';
-  document.getElementById('rcard-preview-count').textContent   = '';
-  document.getElementById('rcard-log').style.display           = 'none';
-  document.getElementById('batch-progress').style.display      = 'none';
-  document.getElementById('batch-log').innerHTML               = '';
-  document.getElementById('rcard-log-status').textContent      = '';
+  document.getElementById('rcard-info-body').innerHTML       = BATCH_INFO_PLACEHOLDER;
+  document.getElementById('rcard-info-status').textContent   = '';
+  document.getElementById('batch-preview-list').innerHTML    = PREVIEW_PLACEHOLDER;
+  document.getElementById('rcard-preview-count').textContent = '';
+  document.getElementById('log-placeholder').style.display   = '';
+  document.getElementById('log-content').style.display       = 'none';
+  document.getElementById('batch-log').innerHTML             = '';
+  document.getElementById('rcard-log-status').textContent    = '';
+  document.getElementById('prog-total').textContent          = '0';
+  document.getElementById('prog-success').textContent        = '0';
+  document.getElementById('prog-failed').textContent         = '0';
+  document.getElementById('prog-label').textContent          = '0/0';
+  document.getElementById('prog-bar').style.width            = '0%';
 }
 
 function showInfoCard(urlCount, boardName, scheduleStr) {
-  showBatchResults();
   document.getElementById('rcard-info-body').innerHTML =
     `<div class="rcard-info-row"><span>URLs</span><strong>${urlCount}</strong></div>` +
     `<div class="rcard-info-row"><span>Board</span><strong>${escHtml(boardName || '—')}</strong></div>` +
     `<div class="rcard-info-row"><span>Mode</span><strong>${escHtml(scheduleStr || 'Running now')}</strong></div>`;
   document.getElementById('rcard-info-status').textContent = scheduleStr ? 'Scheduled' : 'In progress';
-  document.getElementById('rcard-info').style.display = '';
-  document.getElementById('batch-results-title').textContent = scheduleStr ? 'Scheduled' : 'Running';
 }
 
 // Returns URLs already pending/recently-fired (within 24h) across scheduledPins
@@ -1047,11 +1042,8 @@ async function previewBatch() {
   btn.disabled = true;
   btn.textContent = `Scraping ${urls.length} URL${urls.length > 1 ? 's' : ''}…`;
 
-  // Show Card 2 (Preview) with loading placeholders
-  showBatchResults();
+  // Populate Card 2 (Preview) with loading placeholders
   document.getElementById('rcard-preview-count').textContent = `${urls.length} URL${urls.length > 1 ? 's' : ''}`;
-  document.getElementById('rcard-preview').style.display = '';
-  document.getElementById('batch-results-title').textContent = 'Preview';
   list.innerHTML = urls.map((url, i) => `
     <div class="bprev-item loading" id="bprev-${i}">
       <div class="bprev-thumb-empty">…</div>
@@ -1206,10 +1198,7 @@ document.getElementById('b-start-btn').addEventListener('click', async () => {
     updateScheduledBadge();
     updateNotifPanel();
     renderScheduled();
-    // Show info card confirming the schedule
     showInfoCard(item.urls ? item.urls.length : '?', boardName, fireAt.toLocaleString() + ` (${tz})`);
-    document.getElementById('rcard-info-status').textContent = 'Scheduled';
-    document.getElementById('batch-results-title').textContent = 'Scheduled';
     toast(`Batch scheduled for ${fireAt.toLocaleString()}!`);
     return;
   }
@@ -1218,7 +1207,6 @@ document.getElementById('b-start-btn').addEventListener('click', async () => {
   const btn = document.getElementById('b-start-btn');
   btn.disabled = true; btn.textContent = 'Running…';
 
-  const progCard    = document.getElementById('batch-progress');
   const progBar     = document.getElementById('prog-bar');
   const progLbl     = document.getElementById('prog-label');
   const progTotal   = document.getElementById('prog-total');
@@ -1226,12 +1214,12 @@ document.getElementById('b-start-btn').addEventListener('click', async () => {
   const progFailed  = document.getElementById('prog-failed');
   const batchLog    = document.getElementById('batch-log');
 
-  // Show Card 1 (Info) + Card 3 (Log), keep Card 2 (Preview) if already visible
+  // Populate Card 1 (Info) + reveal Card 3 (Log)
   const boardName = boardsCache.find(b => b.id === board)?.name || board;
   showInfoCard(isUrlMode ? urls.length : '?', boardName, null);
-  document.getElementById('rcard-log').style.display = '';
-  document.getElementById('rcard-log-status').textContent = 'Running…';
-  progCard.style.display = '';
+  document.getElementById('log-placeholder').style.display = 'none';
+  document.getElementById('log-content').style.display     = '';
+  document.getElementById('rcard-log-status').textContent  = 'Running…';
   batchLog.innerHTML = '';
   progBar.style.width = '0%';
   progTotal.textContent = '0';
@@ -1294,17 +1282,14 @@ document.getElementById('b-start-btn').addEventListener('click', async () => {
           batchLog.appendChild(row);
           batchLog.scrollTop = batchLog.scrollHeight;
         } else if (ev.type === 'done') {
-          const doneStr = `${ev.success} posted${ev.failed > 0 ? `, ${ev.failed} failed` : ''}`;
-          document.getElementById('rcard-log-status').textContent  = doneStr;
+          document.getElementById('rcard-log-status').textContent  = `${ev.success} posted${ev.failed > 0 ? `, ${ev.failed} failed` : ''}`;
           document.getElementById('rcard-info-status').textContent = 'Done';
-          document.getElementById('batch-results-title').textContent = 'Done';
           toast(`Done: ${ev.success} posted, ${ev.failed} failed`, ev.failed > 0 ? 'warn' : 'ok');
         }
       }
     }
   } catch (err) {
     document.getElementById('rcard-log-status').textContent = 'Error';
-    document.getElementById('batch-results-title').textContent = 'Error';
     toast(err.message, 'err');
   } finally {
     btn.disabled = false; btn.textContent = 'Start Batch';

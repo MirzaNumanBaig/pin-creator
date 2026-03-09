@@ -203,69 +203,69 @@ https://www.amazon.com/dp/B2XXXXXXXX?tag=your-tag"></textarea>
           <!-- ── RIGHT: Results Panel ── -->
           <div class="batch-split-results" id="batch-split-results">
             <div class="batch-results-header">
-              <span class="batch-results-title" id="batch-results-title">Results</span>
-              <button class="batch-results-clear" id="batch-results-clear" onclick="clearBatchResults()" style="display:none" title="Clear results">✕</button>
+              <span class="batch-results-title">Results</span>
+              <button class="batch-results-clear" onclick="clearBatchResults()" title="Reset all cards">✕</button>
             </div>
 
-            <!-- Scrollable body -->
             <div class="batch-results-body" id="batch-results-body">
 
-              <!-- Empty state -->
-              <div class="batch-results-empty" id="batch-results-empty">
-                <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40" style="color:var(--text-muted);opacity:.4"><rect x="8" y="8" width="32" height="32" rx="4"/><line x1="16" y1="18" x2="32" y2="18"/><line x1="16" y1="24" x2="28" y2="24"/><line x1="16" y1="30" x2="24" y2="30"/></svg>
-                <p>Preview or run a batch<br>to see results here.</p>
-              </div>
-
-              <!-- Card 1: Batch Info -->
-              <div class="rcard" id="rcard-info" style="display:none">
+              <!-- Card 1: Batch Info — always visible -->
+              <div class="rcard">
                 <div class="rcard-header">
                   <span class="rcard-label">Batch</span>
                   <span class="rcard-status" id="rcard-info-status"></span>
                 </div>
-                <div class="rcard-body" id="rcard-info-body"></div>
+                <div class="rcard-body" id="rcard-info-body">
+                  <div class="rcard-placeholder">Start or schedule a batch<br>to see details here.</div>
+                </div>
               </div>
 
-              <!-- Card 2: Preview -->
-              <div class="rcard" id="rcard-preview" style="display:none">
+              <!-- Card 2: Preview — always visible -->
+              <div class="rcard">
                 <div class="rcard-header">
                   <span class="rcard-label">Preview</span>
                   <span class="rcard-status" id="rcard-preview-count"></span>
                 </div>
-                <div class="rcard-body" id="rcard-preview-body">
-                  <div id="batch-preview-list"></div>
+                <div class="rcard-body">
+                  <div id="batch-preview-list">
+                    <div class="rcard-placeholder">Click <strong>Preview All URLs</strong><br>to see product previews here.</div>
+                  </div>
                 </div>
               </div>
 
-              <!-- Card 3: Log -->
-              <div class="rcard" id="rcard-log" style="display:none">
+              <!-- Card 3: Log — always visible -->
+              <div class="rcard">
                 <div class="rcard-header">
                   <span class="rcard-label">Log</span>
                   <span class="rcard-status" id="rcard-log-status"></span>
                 </div>
                 <div class="rcard-body">
                   <div id="batch-progress">
-                    <div class="batch-summary-grid">
-                      <div class="batch-stat batch-stat--clickable batch-stat--active" id="bstat-all" onclick="filterBatchLog('all')" title="Show all">
-                        <div class="batch-stat-num" id="prog-total">0</div>
-                        <div class="batch-stat-label">Total</div>
+                    <div class="rcard-placeholder" id="log-placeholder">Run a batch to see<br>the status report here.</div>
+                    <div id="log-content" style="display:none">
+                      <div class="batch-summary-grid">
+                        <div class="batch-stat batch-stat--clickable batch-stat--active" id="bstat-all" onclick="filterBatchLog('all')" title="Show all">
+                          <div class="batch-stat-num" id="prog-total">0</div>
+                          <div class="batch-stat-label">Total</div>
+                        </div>
+                        <div class="batch-stat batch-stat--ok batch-stat--clickable" id="bstat-ok" onclick="filterBatchLog('ok')" title="Show posted only">
+                          <div class="batch-stat-num" id="prog-success">0</div>
+                          <div class="batch-stat-label">Posted ↓</div>
+                        </div>
+                        <div class="batch-stat batch-stat--err batch-stat--clickable" id="bstat-err" onclick="filterBatchLog('err')" title="Show failed only">
+                          <div class="batch-stat-num" id="prog-failed">0</div>
+                          <div class="batch-stat-label">Failed ↓</div>
+                        </div>
+                        <div class="batch-stat">
+                          <div class="batch-stat-num" id="prog-label">0/0</div>
+                          <div class="batch-stat-label">Progress</div>
+                        </div>
                       </div>
-                      <div class="batch-stat batch-stat--ok batch-stat--clickable" id="bstat-ok" onclick="filterBatchLog('ok')" title="Show posted only">
-                        <div class="batch-stat-num" id="prog-success">0</div>
-                        <div class="batch-stat-label">Posted ↓</div>
+                      <div class="progress-bar-wrap">
+                        <div class="progress-bar" id="prog-bar" style="width:0%"></div>
                       </div>
-                      <div class="batch-stat batch-stat--err batch-stat--clickable" id="bstat-err" onclick="filterBatchLog('err')" title="Show failed only">
-                        <div class="batch-stat-num" id="prog-failed">0</div>
-                        <div class="batch-stat-label">Failed ↓</div>
-                      </div>
-                      <div class="batch-stat">
-                        <div class="batch-stat-num" id="prog-label">0/0</div>
-                        <div class="batch-stat-label">Progress</div>
-                      </div>
+                      <div class="batch-log" id="batch-log"></div>
                     </div>
-                    <div class="progress-bar-wrap">
-                      <div class="progress-bar" id="prog-bar" style="width:0%"></div>
-                    </div>
-                    <div class="batch-log" id="batch-log"></div>
                   </div>
                 </div>
               </div>
