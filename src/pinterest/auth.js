@@ -156,7 +156,7 @@ async function login() {
   const appId = process.env.PINTEREST_APP_ID;
   if (!appId) throw new Error('PINTEREST_APP_ID must be set in .env');
 
-  const scopes = 'pins:read,pins:write,boards:read,boards:write,user_accounts:read';
+  const scopes = 'pins:read,pins:read_secret,pins:write,boards:read,boards:read_secret,boards:write,user_accounts:read';
   const authUrl =
     `${AUTH_URL}?client_id=${encodeURIComponent(appId)}` +
     `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
