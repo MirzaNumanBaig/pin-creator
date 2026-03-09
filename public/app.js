@@ -1000,21 +1000,21 @@ async function previewBatch() {
     </div>`).join('');
   list.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-  // Fetch all in parallel
-  const results = await Promise.allSettled(
-    urls.map(url =>
-      fetch('/api/preview', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, board, hashtags: [], ai, aiTitle, aiDesc }),
-      }).then(r => r.json().then(d => { if (!r.ok) throw new Error(d.error); return d; }))
-    )
-  );
+  // Fetch with concurrency limit of 3 — prevents 429 rate-limit errors from ScraperAPI
+  const CONCURRENCY = 3;
+  let done = 0, succeeded = 0;
+  let idx = 0;
 
-  // Render results
-  results.forEach((result, i) => {
+  function renderCard(i, result) {
+    done++;
+    if (result.status === 'fulfilled') succeeded++;
+    btn.textContent = `Scraping… ${done}/${urls.length}`;
+
     const el = document.getElementById(`bprev-${i}`);
     if (!el) return;
     el.classList.remove('loading');
+
+    const shortUrl = urls[i].length > 65 ? urls[i].slice(0, 62) + '…' : urls[i];
     if (result.status === 'fulfilled') {
       const { pin, meta } = result.value;
       el.innerHTML = `
@@ -1022,7 +1022,7 @@ async function previewBatch() {
           ? `<img class="bprev-thumb" src="${escHtml(pin.imageUrl)}" alt="" onerror="this.outerHTML='<div class=bprev-thumb-empty>No img</div>'" />`
           : `<div class="bprev-thumb-empty">No img</div>`}
         <div class="bprev-body">
-          <div class="bprev-num">#${i + 1} &nbsp;·&nbsp; <span style="font-weight:400">${escHtml(urls[i].length > 65 ? urls[i].slice(0, 62) + '…' : urls[i])}</span></div>
+          <div class="bprev-num">#${i + 1} &nbsp;·&nbsp; <span style="font-weight:400">${escHtml(shortUrl)}</span></div>
           <div class="bprev-title">${escHtml(pin.title)}</div>
           <div class="bprev-desc">${escHtml(pin.description)}</div>
           <div class="bprev-meta">
@@ -1037,13 +1037,32 @@ async function previewBatch() {
       el.innerHTML = `
         <div class="bprev-thumb-empty" style="color:var(--error)">✕</div>
         <div class="bprev-body">
-          <div class="bprev-num">#${i + 1} &nbsp;·&nbsp; <span style="font-weight:400">${escHtml(urls[i].length > 65 ? urls[i].slice(0, 62) + '…' : urls[i])}</span></div>
+          <div class="bprev-num">#${i + 1} &nbsp;·&nbsp; <span style="font-weight:400">${escHtml(shortUrl)}</span></div>
           <div class="bprev-error">${escHtml(result.reason?.message || 'Failed to fetch')}</div>
         </div>`;
     }
-  });
+  }
 
-  const succeeded = results.filter(r => r.status === 'fulfilled').length;
+  async function worker() {
+    while (idx < urls.length) {
+      const i = idx++;
+      const url = urls[i];
+      try {
+        const r = await fetch('/api/preview', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, board, hashtags: [], ai, aiTitle, aiDesc }),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error);
+        renderCard(i, { status: 'fulfilled', value: d });
+      } catch (err) {
+        renderCard(i, { status: 'rejected', reason: err });
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, urls.length) }, worker));
+
   toast(`Preview: ${succeeded}/${urls.length} loaded`);
   btn.disabled = false;
   btn.textContent = 'Preview All URLs';
