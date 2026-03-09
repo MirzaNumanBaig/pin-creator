@@ -168,14 +168,14 @@ app.get('/api/me', async (req, res) => {
 
 // GET /api/boards
 app.get('/api/boards', async (req, res) => {
-  if (!req.userHasOAuthToken) {
-    // No OAuth cookie — guest or env-var-only server. UI should show "Not connected".
-    return res.json({ connected: false, boards: [] });
-  }
   try {
     const boards = await listBoards();
     res.json({ connected: true, boards });
   } catch (err) {
+    // getAccessToken throws "Not authenticated" when there is truly no token available
+    if (err.message && err.message.toLowerCase().includes('not authenticated')) {
+      return res.json({ connected: false, boards: [] });
+    }
     res.status(500).json({ error: err.message });
   }
 });
