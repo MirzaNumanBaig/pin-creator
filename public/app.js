@@ -958,13 +958,12 @@ async function previewBatch() {
   const board   = document.getElementById('b-board').value || 'PREVIEW';
   const ai      = document.getElementById('b-ai').checked;
   const aiTitle = ai ? (document.getElementById('b-ai-title')?.checked ?? true) : false;
-  const aiDesc  = ai ? (document.getElementById('b-ai-desc')?.checked ?? true) : false;
+  const aiDesc  = ai ? (document.getElementById('b-ai-desc')?.checked  ?? true) : false;
 
-  let firstUrl = '';
+  let urls = [];
   if (isUrlMode) {
-    const urls = getUrlsFromTextarea();
+    urls = getUrlsFromTextarea();
     if (!urls.length) { toast('Paste at least one URL to preview', 'err'); return; }
-    firstUrl = urls[0];
   } else {
     const file = document.getElementById('b-file').files[0];
     if (!file) { toast('Upload a CSV file first', 'err'); return; }
@@ -974,50 +973,80 @@ async function previewBatch() {
       const header = lines[0].split(',').map(h => h.trim().toLowerCase());
       const colIdx = header.indexOf('product_url');
       if (colIdx === -1) { toast('CSV must have a product_url column', 'err'); return; }
-      const firstData = lines[1];
-      if (!firstData) { toast('No data rows in CSV', 'err'); return; }
-      const cols = firstData.match(/(\".*?\"|[^,]+)(?=\s*,|\s*$)/g) || [];
-      firstUrl = (cols[colIdx] || '').replace(/^\"|\"$/g, '').trim();
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].match(/(\".*?\"|[^,]+)(?=\s*,|\s*$)/g) || [];
+        const u = (cols[colIdx] || '').replace(/^\"|\"$/g, '').trim();
+        if (u) urls.push(u);
+      }
+      if (!urls.length) { toast('No data rows in CSV', 'err'); return; }
     } catch { toast('Could not read CSV file', 'err'); return; }
   }
 
-  if (!firstUrl) { toast('Could not find a URL to preview', 'err'); return; }
+  const btn  = document.getElementById('b-preview-btn');
+  const list = document.getElementById('batch-preview-list');
 
-  const btn = document.getElementById('b-preview-btn');
-  btn.disabled = true; btn.textContent = 'Scraping…';
+  btn.disabled = true;
+  btn.textContent = `Scraping ${urls.length} URL${urls.length > 1 ? 's' : ''}…`;
 
-  try {
-    const res  = await fetch('/api/preview', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: firstUrl, board, hashtags: [], ai, aiTitle, aiDesc }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
+  // Show loading placeholders immediately
+  list.style.display = '';
+  list.innerHTML = urls.map((url, i) => `
+    <div class="bprev-item loading" id="bprev-${i}">
+      <div class="bprev-thumb-empty">…</div>
+      <div class="bprev-body">
+        <div class="bprev-num">#${i + 1} &nbsp;·&nbsp; <span style="font-weight:400">${escHtml(url.length > 65 ? url.slice(0, 62) + '…' : url)}</span></div>
+        <div class="bprev-title" style="color:var(--text-muted)">Loading…</div>
+      </div>
+    </div>`).join('');
+  list.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-    const { pin, meta } = data;
-    const imgEl = document.getElementById('b-prev-img');
-    if (pin.imageUrl) { imgEl.src = pin.imageUrl; imgEl.style.display = ''; }
-    else { imgEl.style.display = 'none'; }
+  // Fetch all in parallel
+  const results = await Promise.allSettled(
+    urls.map(url =>
+      fetch('/api/preview', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, board, hashtags: [], ai, aiTitle, aiDesc }),
+      }).then(r => r.json().then(d => { if (!r.ok) throw new Error(d.error); return d; }))
+    )
+  );
 
-    document.getElementById('b-prev-title').textContent = pin.title;
-    document.getElementById('b-prev-desc').textContent  = pin.description;
-    const lnk = document.getElementById('b-prev-link');
-    lnk.href = pin.link;
-    lnk.textContent = pin.link.length > 55 ? pin.link.slice(0, 52) + '…' : pin.link;
-    document.getElementById('b-prev-tlen').textContent = meta.titleLen;
-    document.getElementById('b-prev-dlen').textContent = meta.descLen;
-    document.getElementById('b-prev-asin').textContent  = meta.asin  ? `ASIN: ${meta.asin}`   : '';
-    document.getElementById('b-prev-price').textContent = meta.price ? `Price: ${meta.price}` : '';
+  // Render results
+  results.forEach((result, i) => {
+    const el = document.getElementById(`bprev-${i}`);
+    if (!el) return;
+    el.classList.remove('loading');
+    if (result.status === 'fulfilled') {
+      const { pin, meta } = result.value;
+      el.innerHTML = `
+        ${pin.imageUrl
+          ? `<img class="bprev-thumb" src="${escHtml(pin.imageUrl)}" alt="" onerror="this.outerHTML='<div class=bprev-thumb-empty>No img</div>'" />`
+          : `<div class="bprev-thumb-empty">No img</div>`}
+        <div class="bprev-body">
+          <div class="bprev-num">#${i + 1} &nbsp;·&nbsp; <span style="font-weight:400">${escHtml(urls[i].length > 65 ? urls[i].slice(0, 62) + '…' : urls[i])}</span></div>
+          <div class="bprev-title">${escHtml(pin.title)}</div>
+          <div class="bprev-desc">${escHtml(pin.description)}</div>
+          <div class="bprev-meta">
+            <span>${meta.titleLen}/100 title</span>
+            <span>${meta.descLen}/500 desc</span>
+            ${meta.asin  ? `<span>ASIN: ${meta.asin}</span>` : ''}
+            ${meta.price ? `<span>${escHtml(meta.price)}</span>` : ''}
+          </div>
+        </div>`;
+    } else {
+      el.classList.add('error');
+      el.innerHTML = `
+        <div class="bprev-thumb-empty" style="color:var(--error)">✕</div>
+        <div class="bprev-body">
+          <div class="bprev-num">#${i + 1} &nbsp;·&nbsp; <span style="font-weight:400">${escHtml(urls[i].length > 65 ? urls[i].slice(0, 62) + '…' : urls[i])}</span></div>
+          <div class="bprev-error">${escHtml(result.reason?.message || 'Failed to fetch')}</div>
+        </div>`;
+    }
+  });
 
-    const card = document.getElementById('batch-preview-card');
-    card.style.display = '';
-    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    toast('Preview ready');
-  } catch (err) {
-    toast(err.message, 'err');
-  } finally {
-    btn.disabled = false; btn.textContent = 'Preview First URL';
-  }
+  const succeeded = results.filter(r => r.status === 'fulfilled').length;
+  toast(`Preview: ${succeeded}/${urls.length} loaded`);
+  btn.disabled = false;
+  btn.textContent = 'Preview All URLs';
 }
 
 // ── Batch: Start ──────────────────────────────────────────
