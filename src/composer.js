@@ -13,12 +13,19 @@ function truncateAtWord(str, maxLength) {
 /**
  * Build a Pinterest-optimised description.
  * Combines the product description with optional hashtags, capped at 500 chars.
+ * If price is provided it is prepended (e.g. "$29.99 — description...").
  */
-function buildDescription(rawDescription, hashtags = []) {
+function buildDescription(rawDescription, hashtags = [], price = null) {
   const MAX = 500;
 
   // Clean up whitespace
   let desc = (rawDescription || '').replace(/\s+/g, ' ').trim();
+
+  // Prepend price when available
+  if (price) {
+    const prefix = `${price} — `;
+    desc = prefix + desc;
+  }
 
   // Build the hashtag string
   const tagString = hashtags.length
@@ -57,7 +64,7 @@ function buildDescription(rawDescription, hashtags = []) {
  */
 function composePin(productData, affiliateUrl, boardId, hashtags = []) {
   const title = truncateAtWord(productData.title, 100);
-  const description = buildDescription(productData.description, hashtags);
+  const description = buildDescription(productData.description, hashtags, productData.price || null);
 
   return {
     title,

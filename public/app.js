@@ -412,6 +412,7 @@ function buildRowHtml(id) {
       <img id="r${id}-prev-img" src="" alt="" onerror="this.style.display='none'" />
       <div class="pin-title" id="r${id}-prev-title"></div>
       <div class="pin-desc"  id="r${id}-prev-desc"></div>
+      <div class="pin-price" id="r${id}-prev-price" style="display:none"></div>
       <a class="pin-link"    id="r${id}-prev-link" href="#" target="_blank"></a>
       <div class="char-counts">
         <span id="r${id}-prev-tlen">0</span>/100 title &nbsp;·&nbsp;
@@ -453,6 +454,13 @@ async function previewRow(id) {
     lnk.textContent = pin.link.length > 50 ? pin.link.slice(0, 47) + '…' : pin.link;
     document.getElementById(`r${id}-prev-tlen`).textContent = meta.titleLen;
     document.getElementById(`r${id}-prev-dlen`).textContent = meta.descLen;
+    const priceEl = document.getElementById(`r${id}-prev-price`);
+    if (meta.price) {
+      priceEl.textContent = meta.price;
+      priceEl.style.display = '';
+    } else {
+      priceEl.style.display = 'none';
+    }
     document.getElementById(`r${id}-prev-panel`).style.display = '';
     toast('Preview ready');
   } catch (err) {
@@ -1076,14 +1084,14 @@ async function previewBatch() {
           ? `<img class="bprev-thumb" src="${escHtml(pin.imageUrl)}" alt="" onerror="this.outerHTML='<div class=bprev-thumb-empty>No img</div>'" />`
           : `<div class="bprev-thumb-empty">No img</div>`}
         <div class="bprev-body">
-          <div class="bprev-num">#${i + 1} &nbsp;·&nbsp; <span style="font-weight:400">${escHtml(shortUrl)}</span></div>
+          <div class="bprev-num">#${i + 1} &nbsp;·&nbsp; ${escHtml(shortUrl)}</div>
           <div class="bprev-title">${escHtml(pin.title)}</div>
+          ${meta.price ? `<div class="bprev-price">${escHtml(meta.price)}</div>` : ''}
           <div class="bprev-desc">${escHtml(pin.description)}</div>
           <div class="bprev-meta">
             <span>${meta.titleLen}/100 title</span>
             <span>${meta.descLen}/500 desc</span>
-            ${meta.asin  ? `<span>ASIN: ${meta.asin}</span>` : ''}
-            ${meta.price ? `<span>${escHtml(meta.price)}</span>` : ''}
+            ${meta.asin ? `<span>ASIN: ${meta.asin}</span>` : ''}
           </div>
         </div>`;
     } else {
@@ -1091,7 +1099,7 @@ async function previewBatch() {
       el.innerHTML = `
         <div class="bprev-thumb-empty" style="color:var(--error)">✕</div>
         <div class="bprev-body">
-          <div class="bprev-num">#${i + 1} &nbsp;·&nbsp; <span style="font-weight:400">${escHtml(shortUrl)}</span></div>
+          <div class="bprev-num">#${i + 1} &nbsp;·&nbsp; ${escHtml(shortUrl)}</div>
           <div class="bprev-error">${escHtml(result.reason?.message || 'Failed to fetch')}</div>
         </div>`;
     }
